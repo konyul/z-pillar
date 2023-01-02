@@ -25,6 +25,32 @@ def points_in_boxes_cpu(points, boxes):
     return point_indices.numpy() if is_numpy else point_indices
 
 
+def points_in_gaussian_boxes_gpu(points, boxes):
+    """
+    :param points: (B, M, 3)
+    :param boxes: (B, T, 7), num_valid_boxes <= T
+    :return box_idxs_of_pts: (B, M), default background = -1
+    """
+    assert boxes.shape[0] == points.shape[0]
+    assert boxes.shape[2] == 7 and points.shape[2] == 3
+    batch_size, num_points, _ = points.shape
+
+    sigma_factor = 3
+    box_idxs_of_pts = points.new_zeros((batch_size, num_points), dtype=torch.int).fill_(-1)
+    gaussian_output = points.new_zeros((batch_size, num_points), dtype=torch.float).fill_(0)
+    roiaware_pool3d_cuda.points_in_boxes_gpu(boxes.contiguous(), points.contiguous(), box_idxs_of_pts)
+    box_idxes = torch.unique(box_idxs_of_pts)[1:]
+    for box_idx in box_idxes:
+        _box = boxes[0][box_idx]
+        mu_x,mu_y,mu_z = _box[:3]
+        sigma_x,sigma_y,sigma_z = 2*_box[3:6]/sigma_factor
+        pts_idx = (box_idxs_of_pts[0]==box_idx).nonzero()[:,0]
+        masked_points = points[0][pts_idx]
+        x_mu = torch.sum((masked_points-_box[:3])**2,axis=-1)
+        sigma = (sigma_x**2+sigma_y**2+sigma_z**2)
+        gaussian = torch.exp(-1/2*(x_mu/sigma))
+        gaussian_output[0][pts_idx] = gaussian
+    return gaussian_output
 def points_in_boxes_gpu(points, boxes):
     """
     :param points: (B, M, 3)

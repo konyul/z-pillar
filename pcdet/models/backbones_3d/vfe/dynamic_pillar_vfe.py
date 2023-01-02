@@ -9,7 +9,7 @@ except Exception as e:
     pass
 
 from .vfe_template import VFETemplate
-
+from pcdet.models.model_utils.transformer import build_transformer
 
 class PFNLayerV2(nn.Module):
     def __init__(self,
@@ -160,7 +160,12 @@ class DynamicPillarVFESimple2D(VFETemplate):
         self.num_filters = self.model_cfg.NUM_FILTERS
         assert len(self.num_filters) > 0
         num_filters = [num_point_features] + list(self.num_filters)
-
+        self.trans = model_cfg.get("Transformer", None)
+        if self.trans is not None:
+            self.transformer = build_transformer(model_cfg.Transformer_CFG)
+            num_queries = model_cfg.Transformer_CFG.num_queries
+            hidden_dim = self.model_cfg.NUM_FILTERS
+            self.query_embed = nn.Embedding(num_queries, hidden_dim[0])
         pfn_layers = []
         for i in range(len(num_filters) - 1):
             in_filters = num_filters[i]
@@ -202,7 +207,9 @@ class DynamicPillarVFESimple2D(VFETemplate):
                        points_coords[:, 1]
 
         unq_coords, unq_inv, unq_cnt = torch.unique(merge_coords, return_inverse=True, return_counts=True, dim=0)
-
+        if self.trans:
+            trans_feat, _, occupied_mask = self.transformer(points, self.query_embed.weight, unq_inv, batch_dict)
+            trans_feat = trans_feat.squeeze(0).squeeze(1).contiguous()
         f_center = torch.zeros_like(points_xyz)
         f_center[:, 0] = points_xyz[:, 0] - (points_coords[:, 0].to(points_xyz.dtype) * self.voxel_x + self.x_offset)
         f_center[:, 1] = points_xyz[:, 1] - (points_coords[:, 1].to(points_xyz.dtype) * self.voxel_y + self.y_offset)
@@ -234,7 +241,8 @@ class DynamicPillarVFESimple2D(VFETemplate):
                                      unq_coords % self.scale_y,
                                      ), dim=1)
         pillar_coords = pillar_coords[:, [0, 2, 1]]
-
+        if self.trans:
+            features[occupied_mask] = features[occupied_mask] + trans_feat
         batch_dict['pillar_features'] = features
         batch_dict['pillar_coords'] = pillar_coords
         return batch_dict

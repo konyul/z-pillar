@@ -5,6 +5,7 @@ class PillarNet(Detector3DTemplate):
     def __init__(self, model_cfg, num_class, dataset):
         super().__init__(model_cfg=model_cfg, num_class=num_class, dataset=dataset)
         self.module_list = self.build_networks()
+        self.model_cfg = model_cfg
 
     def forward(self, batch_dict):
         for cur_module in self.module_list:
@@ -31,6 +32,15 @@ class PillarNet(Detector3DTemplate):
         }
 
         loss = loss_rpn
+        if self.model_cfg['VFE'].get('LOSS_CFG',None):
+            loss_vfe, tb_dict = self.vfe.get_loss(tb_dict)
+            weight = self.model_cfg['VFE']['LOSS_CFG']['weight']
+            loss +=  weight * loss_vfe
+            tb_dict.update({
+                'loss_vfe' : loss_vfe.item(),
+                **tb_dict
+
+            })
         return loss, tb_dict, disp_dict
 
     def post_processing(self, batch_dict):
