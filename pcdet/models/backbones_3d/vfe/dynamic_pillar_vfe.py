@@ -10,6 +10,7 @@ except Exception as e:
 
 from .vfe_template import VFETemplate
 from pcdet.models.model_utils.transformer import build_transformer
+from pcdet.models.model_utils.mlp import build_mlp
 
 class PFNLayerV2(nn.Module):
     def __init__(self,
@@ -160,12 +161,13 @@ class DynamicPillarVFESimple2D(VFETemplate):
         self.num_filters = self.model_cfg.NUM_FILTERS
         assert len(self.num_filters) > 0
         num_filters = [num_point_features] + list(self.num_filters)
-        self.trans = model_cfg.get("Transformer", None)
-        if self.trans is not None:
-            self.transformer = build_transformer(model_cfg.Transformer_CFG)
-            num_queries = model_cfg.Transformer_CFG.num_queries
-            hidden_dim = self.model_cfg.NUM_FILTERS
-            self.query_embed = nn.Embedding(num_queries, hidden_dim[0])
+        self.zpillar = model_cfg.get("ZPILLAR", None)
+        self.numbins = int(8/voxel_size[2])
+        if self.zpillar == 'Transformer':
+            self.zpillar_model = build_transformer(model_cfg.ZPILLAR_CFG, self.numbins)
+            self.query_embed = nn.Embedding(1, 32)
+        elif self.zpillar == 'MLP':
+            self.zpillar_model = build_mlp(model_cfg.ZPILLAR_CFG, self.numbins)
         pfn_layers = []
         for i in range(len(num_filters) - 1):
             in_filters = num_filters[i]
@@ -205,11 +207,18 @@ class DynamicPillarVFESimple2D(VFETemplate):
         merge_coords = points[:, 0].int() * self.scale_xy + \
                        points_coords[:, 0] * self.scale_y + \
                        points_coords[:, 1]
-
+        if self.zpillar is not None:
+            voxels, voxel_coords = batch_dict['voxels'], batch_dict['voxel_coords'].to(torch.long)
+            v_coords = voxel_coords[:, 0] * self.scale_xy + voxel_coords[:, 3] * self.scale_y + voxel_coords[:, 2]
+            v_unq_coords, v_unq_inv, v_unq_cnt = torch.unique(v_coords, return_inverse=True, return_counts=True, dim=0)
+            batch_dict['v_unq_coords'] = v_unq_coords
+            batch_dict['v_unq_inv'] = v_unq_inv
+            batch_dict['v_unq_cnt'] = v_unq_cnt
+            if self.zpillar == 'Transformer':
+                z_pillar_feat, occupied_mask = self.zpillar_model(self.query_embed.weight, batch_dict)
+            else:
+                z_pillar_feat, occupied_mask = self.zpillar_model(batch_dict)
         unq_coords, unq_inv, unq_cnt = torch.unique(merge_coords, return_inverse=True, return_counts=True, dim=0)
-        if self.trans:
-            trans_feat, _, occupied_mask = self.transformer(points, self.query_embed.weight, unq_inv, batch_dict)
-            trans_feat = trans_feat.squeeze(0).squeeze(1).contiguous()
         f_center = torch.zeros_like(points_xyz)
         f_center[:, 0] = points_xyz[:, 0] - (points_coords[:, 0].to(points_xyz.dtype) * self.voxel_x + self.x_offset)
         f_center[:, 1] = points_xyz[:, 1] - (points_coords[:, 1].to(points_xyz.dtype) * self.voxel_y + self.y_offset)
@@ -241,8 +250,8 @@ class DynamicPillarVFESimple2D(VFETemplate):
                                      unq_coords % self.scale_y,
                                      ), dim=1)
         pillar_coords = pillar_coords[:, [0, 2, 1]]
-        if self.trans:
-            features[occupied_mask] = features[occupied_mask] + trans_feat
+        if self.zpillar is not None:
+            features[occupied_mask] = features[occupied_mask] + z_pillar_feat
         batch_dict['pillar_features'] = features
         batch_dict['pillar_coords'] = pillar_coords
         return batch_dict
