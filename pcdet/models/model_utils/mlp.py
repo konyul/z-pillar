@@ -27,21 +27,19 @@ class MLP(nn.Module):
     def __init__(self,
                  in_channels,
                  out_channels,
-                 numbins):
+                 num_bins):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.numbins = numbins
-        self.bin_shuffle = bin_shuffle((self.in_channels)*numbins, out_channels)
+        self.num_bins = num_bins
+        self.bin_shuffle = bin_shuffle((self.in_channels)*num_bins, out_channels)
 
     def binning(self, data_dict):
-        voxels, voxel_coords = data_dict['voxels'], data_dict['voxel_coords'].to(torch.long)
-        unq_coords, unq_inv, unq_cnt = data_dict['v_unq_coords'], data_dict['v_unq_inv'], data_dict['v_unq_cnt']
+        voxels, voxel_coords = data_dict['voxel_features'], data_dict['voxel_features_coords'].to(torch.long)
+        unq_coords, unq_inv, unq_cnt = data_dict['v_feat_unq_coords'], data_dict['v_feat_unq_inv'], data_dict['v_feat_unq_cnt']
 
-        src = voxels.new_zeros((unq_coords.shape[0], self.numbins, voxels.shape[2]))
-        voxel_norm = voxels.sum(1) / data_dict['voxel_num_points'].unsqueeze(1)
-
-        src[unq_inv, voxel_coords[:, 1]] = voxel_norm
+        src = voxels.new_zeros((unq_coords.shape[0], self.num_bins, voxels.shape[1]))
+        src[unq_inv, voxel_coords[:, 1]] = voxels
         occupied_mask = unq_cnt >=2 
         return src, occupied_mask
 
@@ -53,17 +51,17 @@ class MLP(nn.Module):
         src = self.bin_shuffle(src)
         return src, occupied_mask
  
-def build_mlp(model_cfg, numbins, model_name='MLP'):
+def build_mlp(model_cfg, num_bins, model_name='MLP'):
     model_dict = {
         'MLP': MLP,
     }
     input_channel = model_cfg.input_channel
     output_channel = model_cfg.output_channel
-    numbins = numbins
+    num_bins = num_bins
     model_class = model_dict[model_name]
 
     model = model_class(input_channel,
                         output_channel,
-                        numbins
+                        num_bins
                         )
     return model

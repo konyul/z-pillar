@@ -52,11 +52,11 @@ DATA_CONFIG:
           }
 
         - NAME: transform_points_to_voxels
-          VOXEL_SIZE: [0.075, 0.075, 0.25]
-          MAX_POINTS_PER_VOXEL: 5
+          VOXEL_SIZE: [0.075, 0.075, 8.0]
+          MAX_POINTS_PER_VOXEL: 20
           MAX_NUMBER_OF_VOXELS: {
-            'train': 1200000,
-            'test': 1200000
+            'train': 30000,
+            'test': 30000
           }
 
 
@@ -69,20 +69,11 @@ MODEL:
         USE_ABSLOTE_XYZ: True
         USE_CLUSTER_XYZ: False
         USE_NORM: True
-        NUM_FILTERS: [ 32 ]
-        ZPILLAR: Transformer
-        ZPILLAR_CFG: {
-          enc_layers: 1,
-          dec_layers: 1,
-          dim_feedforward: 64,
-          hidden_dim: 32, #input channel
-          nheads: 1,
-          pre_norm: False,
-          pos_enc: z
-        }
+        NUM_FILTERS: [ 32, 64, 128 ]
 
     BACKBONE_3D:
-        NAME: PillarResBackBone8x
+        NAME: PillarResE2BackBone8x
+
 
     BACKBONE_2D:
         NAME: BaseBEVBackbone

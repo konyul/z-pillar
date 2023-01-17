@@ -162,7 +162,7 @@ class DynamicPillarVFESimple2D(VFETemplate):
         assert len(self.num_filters) > 0
         num_filters = [num_point_features] + list(self.num_filters)
         self.zpillar = model_cfg.get("ZPILLAR", None)
-        self.numbins = int(8/voxel_size[2])
+        self.numbins = int(8 / voxel_size[2])
         if self.zpillar == 'Transformer':
             self.zpillar_model = build_transformer(model_cfg.ZPILLAR_CFG, self.numbins)
             self.query_embed = nn.Embedding(1, 32)
@@ -184,41 +184,68 @@ class DynamicPillarVFESimple2D(VFETemplate):
         self.y_offset = self.voxel_y / 2 + point_cloud_range[1]
         self.z_offset = self.voxel_z / 2 + point_cloud_range[2]
 
+        self.scale_xyz = grid_size[0] * grid_size[1] * grid_size[2]
+        self.scale_yz = grid_size[1] * grid_size[2]
         self.scale_xy = grid_size[0] * grid_size[1]
         self.scale_y = grid_size[1]
+        self.scale_z = grid_size[2]
 
-        self.grid_size = torch.tensor(grid_size[:2]).cuda()
+        self.grid_size = torch.tensor(grid_size).cuda()
         self.voxel_size = torch.tensor(voxel_size).cuda()
         self.point_cloud_range = torch.tensor(point_cloud_range).cuda()
 
     def get_output_feature_dim(self):
         return self.num_filters[-1]
 
+    def dyn_voxelization(self, points, point_coords, batch_dict):
+        merge_coords = points[:, 0].int() * self.scale_xyz + \
+                        point_coords[:, 0] * self.scale_yz + \
+                        point_coords[:, 1] * self.scale_z + \
+                        point_coords[:, 2]
+        points_data = points[:, 1:].contiguous()
+        
+        unq_coords, unq_inv, unq_cnt = torch.unique(merge_coords, return_inverse=True, return_counts=True)
+
+        points_mean = torch_scatter.scatter_mean(points_data, unq_inv, dim=0)
+        
+        unq_coords = unq_coords.int()
+        voxel_coords = torch.stack((unq_coords // self.scale_xyz,
+                                    (unq_coords % self.scale_xyz) // self.scale_yz,
+                                    (unq_coords % self.scale_yz) // self.scale_z,
+                                    unq_coords % self.scale_z), dim=1)
+        voxel_coords = voxel_coords[:, [0, 3, 2, 1]]
+        
+        batch_dict['voxel_features'] = points_mean.contiguous()
+        batch_dict['voxel_features_coords'] = voxel_coords.contiguous()
+        return batch_dict
+
     def forward(self, batch_dict, **kwargs):
         points = batch_dict['points']  # (batch_idx, x, y, z, i, e)
-
-        points_coords = torch.floor(
-            (points[:, [1, 2]] - self.point_cloud_range[[0, 1]]) / self.voxel_size[[0, 1]]).int()
-        mask = ((points_coords >= 0) & (points_coords < self.grid_size[[0, 1]])).all(dim=1)
+        points_coords_3d = torch.floor((points[:, 1:4] - self.point_cloud_range[0:3]) / self.voxel_size).int()
+        points_coords = points_coords_3d[:,:2]
+        mask = ((points_coords_3d >= 0) & (points_coords_3d < self.grid_size)).all(dim=1)
         points = points[mask]
         points_coords = points_coords[mask]
+        points_coords_3d = points_coords_3d[mask]
+        batch_dict = self.dyn_voxelization(points, points_coords_3d, batch_dict)
         points_xyz = points[:, [1, 2, 3]].contiguous()
 
         merge_coords = points[:, 0].int() * self.scale_xy + \
                        points_coords[:, 0] * self.scale_y + \
                        points_coords[:, 1]
+        unq_coords, unq_inv, unq_cnt = torch.unique(merge_coords, return_inverse=True, return_counts=True, dim=0)
         if self.zpillar is not None:
-            voxels, voxel_coords = batch_dict['voxels'], batch_dict['voxel_coords'].to(torch.long)
-            v_coords = voxel_coords[:, 0] * self.scale_xy + voxel_coords[:, 3] * self.scale_y + voxel_coords[:, 2]
-            v_unq_coords, v_unq_inv, v_unq_cnt = torch.unique(v_coords, return_inverse=True, return_counts=True, dim=0)
-            batch_dict['v_unq_coords'] = v_unq_coords
-            batch_dict['v_unq_inv'] = v_unq_inv
-            batch_dict['v_unq_cnt'] = v_unq_cnt
+            voxel_features, voxel_features_coords = batch_dict['voxel_features'], batch_dict['voxel_features_coords']
+            v_feat_coords = voxel_features_coords[:, 0] * self.scale_xy + voxel_features_coords[:, 3] * self.scale_y + voxel_features_coords[:, 2]
+            v_feat_unq_coords, v_feat_unq_inv, v_feat_unq_cnt = torch.unique(v_feat_coords, return_inverse=True, return_counts=True, dim=0)
+            batch_dict['v_feat_unq_coords'] = v_feat_unq_coords
+            batch_dict['v_feat_unq_inv'] = v_feat_unq_inv
+            batch_dict['voxel_features'] = voxel_features
+            batch_dict['v_feat_unq_cnt'] = v_feat_unq_cnt
             if self.zpillar == 'Transformer':
                 z_pillar_feat, occupied_mask = self.zpillar_model(self.query_embed.weight, batch_dict)
             else:
                 z_pillar_feat, occupied_mask = self.zpillar_model(batch_dict)
-        unq_coords, unq_inv, unq_cnt = torch.unique(merge_coords, return_inverse=True, return_counts=True, dim=0)
         f_center = torch.zeros_like(points_xyz)
         f_center[:, 0] = points_xyz[:, 0] - (points_coords[:, 0].to(points_xyz.dtype) * self.voxel_x + self.x_offset)
         f_center[:, 1] = points_xyz[:, 1] - (points_coords[:, 1].to(points_xyz.dtype) * self.voxel_y + self.y_offset)

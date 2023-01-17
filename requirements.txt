@@ -9,6 +9,5 @@ scikit-image
 tqdm
 torchvision
 SharedArray
-cv2
-json
-cv2
+opencv-python
+torch_scatter
