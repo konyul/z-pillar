@@ -52,11 +52,11 @@ DATA_CONFIG:
           }
 
         - NAME: transform_points_to_voxels
-          VOXEL_SIZE: [0.075, 0.075, 8.0]
-          MAX_POINTS_PER_VOXEL: 20
+          VOXEL_SIZE: [0.075, 0.075, 0.2]
+          MAX_POINTS_PER_VOXEL: 10
           MAX_NUMBER_OF_VOXELS: {
-            'train': 30000,
-            'test': 30000
+            'train': 120000,
+            'test': 160000
           }
 
 
@@ -69,7 +69,7 @@ MODEL:
         USE_ABSLOTE_XYZ: True
         USE_CLUSTER_XYZ: False
         USE_NORM: True
-        NUM_FILTERS: [ 32, 64, 128 ]
+        NUM_FILTERS: [ 32 ]
 
     BACKBONE_3D:
         NAME: PillarResE2BackBone8x

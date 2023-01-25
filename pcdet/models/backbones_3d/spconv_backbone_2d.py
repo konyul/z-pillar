@@ -399,23 +399,23 @@ class PillarResE2BackBone8x(nn.Module):
         dense_block = post_act_block_dense
 
         self.conv1 = spconv.SparseSequential(
-            SparseBasicBlock(128, 128, norm_fn=norm_fn, indice_key='res1'),
-            SparseBasicBlock(128, 128, norm_fn=norm_fn, indice_key='res1'),
+            SparseBasicBlock(32, 32, norm_fn=norm_fn, indice_key='res1'),
+            SparseBasicBlock(32, 32, norm_fn=norm_fn, indice_key='res1'),
         )
 
         self.conv2 = spconv.SparseSequential(
             # [1600, 1408] <- [800, 704]
-            block(128, 256, 3, norm_fn=norm_fn, stride=2, padding=1, indice_key='spconv2', conv_type='spconv'),
-            SparseBasicBlock(256, 256, norm_fn=norm_fn, indice_key='res2'),
-            SparseBasicBlock(256, 256, norm_fn=norm_fn, indice_key='res2'),
+            block(32, 64, 3, norm_fn=norm_fn, stride=2, padding=1, indice_key='spconv2', conv_type='spconv'),
+            SparseBasicBlock(64, 64, norm_fn=norm_fn, indice_key='res2'),
+            SparseBasicBlock(64, 64, norm_fn=norm_fn, indice_key='res2'),
         )
         
         norm_fn = partial(nn.BatchNorm2d, eps=1e-3, momentum=0.01)
         self.maxpool = nn.MaxPool2d(4)
-        self.num_point_features = 256
+        self.num_point_features = 64
         self.backbone_channels = {
-            'x_conv1': 128,
-            'x_conv2': 256,
+            'x_conv1': 32,
+            'x_conv2': 64,
         }
 
     def forward(self, batch_dict):

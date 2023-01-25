@@ -7,7 +7,7 @@ import tqdm
 
 from pcdet.models import load_data_to_gpu
 from pcdet.utils import common_utils
-
+import os
 
 def statistics_info(cfg, ret_dict, metric, disp_dict):
     for cur_thresh in cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST:
@@ -81,7 +81,12 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
         if cfg.LOCAL_RANK == 0:
             progress_bar.set_postfix(disp_dict)
             progress_bar.update()
-
+    if getattr(args, 'infer_time', False):
+        _path = "/".join(str(result_dir).split("/")[:-4])
+        f = open(os.path.join(_path,"fps.txt"),'w')
+        f.write(f'{infer_time_meter.val:.2f}({infer_time_meter.avg:.2f})')
+        f.close()
+        
     if cfg.LOCAL_RANK == 0:
         progress_bar.close()
 

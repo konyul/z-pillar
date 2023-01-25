@@ -70,18 +70,15 @@ MODEL:
         USE_CLUSTER_XYZ: False
         USE_NORM: True
         NUM_FILTERS: [ 32 ]
-        ZPILLAR: Transformer
+        ZPILLAR: MLP
         ZPILLAR_CFG: {
-          enc_layers: 1,
-          dec_layers: 1,
-          dim_feedforward: 64,
-          hidden_dim: 32, #input channel
-          nheads: 1,
-          pre_norm: False
+          input_channel: 5,
+          output_channel: 32
         }
 
     BACKBONE_3D:
-        NAME: PillarResBackBone8x
+        NAME: PillarResE2BackBone8x
+
 
     BACKBONE_2D:
         NAME: BaseBEVBackbone
