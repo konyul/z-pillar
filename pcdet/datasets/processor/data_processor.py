@@ -10,7 +10,7 @@ try:
     import cumm.tensorview as tv
 except:
     pass
-
+import time
 
 class VoxelGeneratorWrapper():
     def __init__(self, vsize_xyz, coors_range_xyz, num_point_features, max_num_points_per_voxel, max_num_voxels):

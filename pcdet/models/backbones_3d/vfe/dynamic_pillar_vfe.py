@@ -11,7 +11,7 @@ except Exception as e:
 from .vfe_template import VFETemplate
 from pcdet.models.model_utils.transformer import build_transformer
 from pcdet.models.model_utils.mlp import build_mlp
-
+import time
 class PFNLayerV2(nn.Module):
     def __init__(self,
                  in_channels,
@@ -222,6 +222,7 @@ class DynamicPillarVFESimple2D(VFETemplate):
                 PFNLayerV2(in_filters, out_filters, self.use_norm, last_layer=(i >= len(num_filters) - 2))
             )
         self.pfn_layers = nn.ModuleList(pfn_layers)
+        self.fuse_method = model_cfg.get("FUSION_METHOD", None)
 
         self.voxel_x = voxel_size[0]
         self.voxel_y = voxel_size[1]

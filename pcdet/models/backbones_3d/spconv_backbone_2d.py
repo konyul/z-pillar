@@ -449,3 +449,43 @@ class PillarResE2BackBone8x(nn.Module):
             }
         })
         return batch_dict
+
+
+class PillarResE0BackBone8x(nn.Module):
+    def __init__(self, model_cfg, input_channels, grid_size, **kwargs):
+        super().__init__()
+        self.model_cfg = model_cfg
+        self.sparse_shape = grid_size[[1, 0]]
+        self.maxpool = nn.MaxPool2d(8)
+        self.num_point_features = 32
+        self.backbone_channels = {
+            'x_conv1': 32,
+        }
+
+    def forward(self, batch_dict):
+        pillar_features, pillar_coords = batch_dict['pillar_features'], batch_dict['pillar_coords']
+        batch_size = batch_dict['batch_size']
+        input_sp_tensor = spconv.SparseConvTensor(
+            features=pillar_features,
+            indices=pillar_coords.int(),
+            spatial_shape=self.sparse_shape,
+            batch_size=batch_size
+        )
+        input_sp_tensor = input_sp_tensor.dense()
+        x_conv1 = self.maxpool(input_sp_tensor)
+
+        batch_dict.update({
+            'spatial_features': x_conv1,
+            'spatial_features_stride': 1
+        })
+        batch_dict.update({
+            'multi_scale_3d_features': {
+                'x_conv1': x_conv1
+            }
+        })
+        batch_dict.update({
+            'multi_scale_2d_strides': {
+                'x_conv1': 1
+            }
+        })
+        return batch_dict

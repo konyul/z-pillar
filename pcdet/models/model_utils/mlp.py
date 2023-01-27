@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 import torch.nn.functional as F
 from torch import nn
-
+import time
 class bin_shuffle(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
