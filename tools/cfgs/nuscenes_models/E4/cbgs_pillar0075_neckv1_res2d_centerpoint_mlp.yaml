@@ -75,7 +75,6 @@ MODEL:
           input_channel: 5,
           output_channel: 32
         }
-        FUSION_METHOD: concat
 
     BACKBONE_3D:
         NAME: PillarResBackBone8x
