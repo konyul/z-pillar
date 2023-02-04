@@ -196,11 +196,8 @@ class DynamicPillarVFESimple2D(VFETemplate):
         self.use_norm = self.model_cfg.USE_NORM
         self.with_distance = self.model_cfg.WITH_DISTANCE
         self.use_absolute_xyz = self.model_cfg.USE_ABSLOTE_XYZ
-        # self.use_cluster_xyz = self.model_cfg.get('USE_CLUSTER_XYZ', True)
         if self.use_absolute_xyz:
             num_point_features += 3
-        # if self.use_cluster_xyz:
-        #     num_point_features += 3
         if self.with_distance:
             num_point_features += 1
 
@@ -310,16 +307,11 @@ class DynamicPillarVFESimple2D(VFETemplate):
         else:
             features.append(points[:, 4:])
 
-        # if self.use_cluster_xyz:
-        #     points_mean = torch_scatter.scatter_mean(points_xyz, unq_inv, dim=0)
-        #     f_cluster = points_xyz - points_mean[unq_inv, :]
-        #     features.append(f_cluster)
-
         if self.with_distance:
             points_dist = torch.norm(points[:, 1:4], 2, dim=1, keepdim=True)
             features.append(points_dist)
         features = torch.cat(features, dim=-1)
-
+        batch_dict['pointsv2'] = torch.cat([points[:, :1],features],dim=1)
         for pfn in self.pfn_layers:
             features = pfn(features, unq_inv)
 

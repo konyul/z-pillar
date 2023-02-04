@@ -80,7 +80,7 @@ MODEL:
         NAME: PillarResBackBone8x
         ZBAM_CFG: {
           zbam: MLP,
-          point_channel: 5,
+          point_channel: 32,
           feat_channel: 32,
           output_channel: 32
         }
