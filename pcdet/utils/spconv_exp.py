@@ -848,7 +848,9 @@ class SparseConvolution(SparseModule):
                                     alloc=input.thrust_allocator,
                                     timer=input._timer)
                                 if data_dict is not None:
-                                    data_dict['ori_unq_inv'] = res[3][:,data_dict['ori_unq_inv']].permute(1,0).max(axis=-1)[0].long()
+                                    pass
+                                    #data_dict['res'] = res[3]
+                                    #data_dict['ori_unq_inv'] = res[3][:,data_dict['ori_unq_inv']].permute(1,0).max(axis=-1)[0].long()
                                     #data_dict['corresponding_pillar_idx'] =  res[3].permute(1,0).max(axis=-1)[0].long()
                             except Exception as e:
                                 msg = "[Exception|implicit_gemm_pair]"

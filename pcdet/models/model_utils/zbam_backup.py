@@ -54,15 +54,12 @@ class MLP(nn.Module):
         self.output_channel = output_channel
         self.num_bins = num_bins
         self.intermediate_channel = point_channel + feat_channel
-        self.zbam = ZBAM(32, reduction_ratio = 32)
+        self.zbam = ZBAM(64)
         self.conv = Conv1d(8, output_channel)
         
     def binning(self, data_dict):
         voxels, voxel_coords = data_dict['voxel_features'], data_dict['voxel_features_coords'].to(torch.long)
-        grid_size = data_dict['grid_size']
-        scale_xy = grid_size[0] * grid_size[1]
-        scale_y = grid_size[1]
-        v_feat_coords = voxel_coords[:, 0] * scale_xy + voxel_coords[:, 3] * scale_y + voxel_coords[:, 2]
+        v_feat_coords = voxel_coords[:, 0] * data_dict['scale_xy'] + voxel_coords[:, 3] * data_dict['scale_y'] + voxel_coords[:, 2]
         unq_coords, unq_inv, unq_cnt = torch.unique(v_feat_coords, return_inverse=True, return_counts=True, dim=0)
         src = voxels.new_zeros((unq_coords.shape[0], self.num_bins, voxels.shape[1]))
         src[unq_inv, voxel_coords[:, 1]] = voxels
@@ -72,27 +69,21 @@ class MLP(nn.Module):
     def dyn_voxelization(self, data_dict):
         points = data_dict['points_sorted']
         points_data = data_dict['points_feature']
-        point_cloud_range = data_dict['point_cloud_range']
-        voxel_size = data_dict['voxel_size']
-        grid_size = data_dict['grid_size']
-        scale_xyz = grid_size[0] * grid_size[1] * grid_size[2]
-        scale_yz = grid_size[1] * grid_size[2]
-        scale_z = grid_size[2]
-        point_coords = torch.floor((points[:, 1:4] - point_cloud_range[0:3]) / voxel_size).int()
-        merge_coords = points[:, 0].int() * scale_xyz + \
-                        point_coords[:, 0] * scale_yz + \
-                        point_coords[:, 1] * scale_z + \
+        point_coords = torch.floor((points[:, 1:4] - data_dict['point_cloud_range'][0:3]) / data_dict['voxel_size']).int()
+        merge_coords = points[:, 0].int() * data_dict['scale_xyz'] + \
+                        point_coords[:, 0] * data_dict['scale_yz'] + \
+                        point_coords[:, 1] * data_dict['scale_z'] + \
                         point_coords[:, 2]
         
         unq_coords, unq_inv, unq_cnt = torch.unique(merge_coords, return_inverse=True, return_counts=True)
-
+        import pdb;pdb.set_trace()
         points_mean = torch_scatter.scatter_mean(points_data, unq_inv, dim=0)
         
         unq_coords = unq_coords.int()
-        voxel_coords = torch.stack((unq_coords // scale_xyz,
-                                    (unq_coords % scale_xyz) // scale_yz,
-                                    (unq_coords % scale_yz) // scale_z,
-                                    unq_coords % scale_z), dim=1)
+        voxel_coords = torch.stack((unq_coords // data_dict['scale_xyz'],
+                                    (unq_coords % data_dict['scale_xyz']) // data_dict['scale_yz'],
+                                    (unq_coords % data_dict['scale_yz']) // data_dict['scale_z'],
+                                    unq_coords % data_dict['scale_z']), dim=1)
         voxel_coords = voxel_coords[:, [0, 3, 2, 1]]
         data_dict['voxel_features'] = points_mean.contiguous()
         data_dict['voxel_features_coords'] = voxel_coords.contiguous()
@@ -100,7 +91,11 @@ class MLP(nn.Module):
 
     def point_sum(self, data_dict):
         points = data_dict['pointsv2']
-        pillar_merge_coords = data_dict['pillar_merge_coords']
+        points_coords_3d = torch.floor((points[:, 4:7] - data_dict['point_cloud_range'][0:3]) / data_dict['voxel_size']).int()
+        points_coords = points_coords_3d[:,:2]
+        pillar_merge_coords = points[:, 0].int() * data_dict['scale_xy'] + \
+                       points_coords[:, 0] * data_dict['scale_y'] + \
+                       points_coords[:, 1]
         sparse_feat = data_dict['sparse_input']._features
         pillar_merge_coords_sorted, idx = torch.sort(pillar_merge_coords)
         points_sorted = points[idx]
@@ -110,10 +105,21 @@ class MLP(nn.Module):
         data_dict['points_feature'] = output
         data_dict['points_sorted'] = torch.cat([points_sorted[:,:1],points_sorted[:,4:]],dim=1)
         return data_dict
+    
+    def downsampling(self, sparse_input, data_dict):
+        downsample_rate = sparse_input.spatial_shape[0] / data_dict['grid_size'][0]
+        data_dict['voxel_size'][:2] = data_dict['voxel_size'][:2]/downsample_rate
+        data_dict['grid_size'][:2] = data_dict['grid_size'][:2] * downsample_rate
+        data_dict['scale_xyz'] = data_dict['grid_size'][0]*data_dict['grid_size'][1]*data_dict['grid_size'][2]
+        data_dict['scale_yz'] = data_dict['grid_size'][1]*data_dict['grid_size'][2]
+        data_dict['scale_z'] = data_dict['grid_size'][2]
+        data_dict['scale_xy'] = data_dict['grid_size'][0]*data_dict['grid_size'][1]
+        data_dict['scale_y'] = data_dict['grid_size'][1]
+        return data_dict
 
     def forward(self, sparse_input, data_dict):
         data_dict['sparse_input'] = sparse_input
-
+        data_dict = self.downsampling(sparse_input, data_dict)
         data_dict = self.point_sum(data_dict)
         data_dict = self.dyn_voxelization(data_dict)
         src, occupied_mask = self.binning(data_dict)
@@ -121,7 +127,6 @@ class MLP(nn.Module):
         src = src[occupied_mask].permute(0, 2, 1)
         src = self.zbam(src)
         src = src.max(2)[0]
-        
         sparse_input._features[occupied_mask] = sparse_input._features[occupied_mask] + src
         return sparse_input
 
