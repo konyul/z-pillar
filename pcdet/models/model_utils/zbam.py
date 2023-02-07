@@ -54,9 +54,15 @@ class MLP(nn.Module):
         self.output_channel = output_channel
         self.num_bins = num_bins
         self.intermediate_channel = point_channel + feat_channel
-        self.zbam = ZBAM(32, reduction_ratio = 32)
-        self.conv = Conv1d(8, output_channel)
-        
+        self.zbam = ZBAM(32)
+        self.conv = Conv1d(8+32, output_channel)
+
+    def verify_positionv2(self, unq_coords):
+        aa_pillar_coords = torch.stack((unq_coords // (1440**2),
+                                     (unq_coords % (1440**2)) // (1440),
+                                     unq_coords % (1440),
+                                     ), dim=1)
+        aa_pillar_coords = aa_pillar_coords[:, [0, 2, 1]]
     def binning(self, data_dict):
         voxels, voxel_coords = data_dict['voxel_features'], data_dict['voxel_features_coords'].to(torch.long)
         grid_size = data_dict['grid_size']
@@ -67,6 +73,8 @@ class MLP(nn.Module):
         src = voxels.new_zeros((unq_coords.shape[0], self.num_bins, voxels.shape[1]))
         src[unq_inv, voxel_coords[:, 1]] = voxels
         occupied_mask = unq_cnt >=2 
+        if False:
+            self.verify_positionv2(unq_coords)
         return src, occupied_mask
     
     def dyn_voxelization(self, data_dict):
@@ -98,15 +106,48 @@ class MLP(nn.Module):
         data_dict['voxel_features_coords'] = voxel_coords.contiguous()
         return data_dict
 
+    def verify_position(self,pillar_merge_coords_sorted,data_dict,points_sorted):
+        aa, inv = torch.unique(pillar_merge_coords_sorted, return_inverse=True)
+        pillar_idx = torch.stack((aa//(1440**2),(aa%(1440**2))//(1440),aa%(1440)),dim=1)
+        points_coords_3d = torch.floor((points_sorted[:, 4:7] - data_dict['point_cloud_range'][0:3]) / data_dict['voxel_size']).int()
+        points_coords = points_coords_3d[:,:2]
+        sorted_merge_coords = points_sorted[:, 0].int() * (1440**2) + \
+                       points_coords[:, 0] * (1440) + \
+                       points_coords[:, 1]
+        aab, _, _ = torch.unique(sorted_merge_coords, return_inverse=True, return_counts=True, dim=0)
+        aab = aab.int()
+        aa_pillar_coords = torch.stack((aab // (1440**2),
+                                     (aab % (1440**2)) // (1440),
+                                     aab % (1440),
+                                     ), dim=1)
+        aa_pillar_coords = aa_pillar_coords[:, [0, 2, 1]]
+
     def point_sum(self, data_dict):
         points = data_dict['pointsv2']
         pillar_merge_coords = data_dict['pillar_merge_coords']
         sparse_feat = data_dict['sparse_input']._features
         pillar_merge_coords_sorted, idx = torch.sort(pillar_merge_coords)
         points_sorted = points[idx]
+        if False:
+            self.verify_position(pillar_merge_coords_sorted,data_dict,points_sorted)
         _, inv = torch.unique(pillar_merge_coords_sorted, return_inverse=True)
         sparse_feat = sparse_feat[inv]
         output = sparse_feat + self.conv(points_sorted[:,1:])
+        data_dict['points_feature'] = output
+        data_dict['points_sorted'] = torch.cat([points_sorted[:,:1],points_sorted[:,4:]],dim=1)
+        return data_dict
+    
+    def point_concat(self, data_dict):
+        points = data_dict['pointsv2']
+        pillar_merge_coords = data_dict['pillar_merge_coords']
+        sparse_feat = data_dict['sparse_input']._features
+        pillar_merge_coords_sorted, idx = torch.sort(pillar_merge_coords)
+        points_sorted = points[idx]
+        if False:
+            self.verify_position(pillar_merge_coords_sorted,data_dict,points_sorted)
+        _, inv = torch.unique(pillar_merge_coords_sorted, return_inverse=True)
+        sparse_feat = sparse_feat[inv]
+        output = self.conv(torch.cat([points_sorted[:,1:],sparse_feat],dim=-1))
         data_dict['points_feature'] = output
         data_dict['points_sorted'] = torch.cat([points_sorted[:,:1],points_sorted[:,4:]],dim=1)
         return data_dict
@@ -114,7 +155,7 @@ class MLP(nn.Module):
     def forward(self, sparse_input, data_dict):
         data_dict['sparse_input'] = sparse_input
 
-        data_dict = self.point_sum(data_dict)
+        data_dict = self.point_concat(data_dict)
         data_dict = self.dyn_voxelization(data_dict)
         src, occupied_mask = self.binning(data_dict)
 
