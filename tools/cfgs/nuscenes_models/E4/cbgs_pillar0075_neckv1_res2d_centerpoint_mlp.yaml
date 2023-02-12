@@ -70,7 +70,7 @@ MODEL:
         USE_CLUSTER_XYZ: False
         USE_NORM: True
         NUM_FILTERS: [ 32 ]
-        ZPILLAR: MLP
+        ZPILLAR: Zconv
         ZPILLAR_CFG: {
           input_channel: 5,
           output_channel: 32

@@ -55,8 +55,7 @@ class Transformer(nn.Module):
         self.d_model = d_model
         self.nhead = nhead
         self.num_bins = num_bins
-        if False:
-            self.up_dimension = MLP(input_dim = 5, hidden_dim = int(d_model/2), output_dim = d_model, num_layers = 2)
+        self.up_dimension = MLP(input_dim = 5, hidden_dim = int(d_model/2), output_dim = d_model, num_layers = 2)
         self.relu = nn.ReLU()
         self.pos_enc = pos_enc
 
