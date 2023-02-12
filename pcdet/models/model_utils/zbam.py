@@ -63,7 +63,6 @@ class CBAM(nn.Module):
                                      unq_coords % (1440),
                                      ), dim=1)
         aa_pillar_coords = aa_pillar_coords[:, [0, 2, 1]]
-
     def binning(self, data_dict):
         voxels, voxel_coords = data_dict['voxel_features'], data_dict['voxel_features_coords'].to(torch.long)
         grid_size = data_dict['grid_size']
