@@ -318,7 +318,8 @@ class PillarResBackBone8x(nn.Module):
         dense_block = post_act_block_dense
 
         self.zbam = model_cfg.get("ZBAM_CFG", None)
-        self.zbam.update({"num_bins":grid_size[-1]})
+        if self.zbam:
+            self.zbam.update({"num_bins":grid_size[-1]})
 
         self.conv1 = SparseSequential(
             SparseBasicBlock(32, 32, norm_fn=norm_fn, indice_key='res1'),
@@ -366,9 +367,9 @@ class PillarResBackBone8x(nn.Module):
             batch_size=batch_size
         )
         x_conv1 = self.conv1(input_sp_tensor, batch_dict)
-        x_conv2 = self.conv2(x_conv1)
-        x_conv3 = self.conv3(x_conv2)
-        x_conv4 = self.conv4(x_conv3)
+        x_conv2 = self.conv2(x_conv1, batch_dict)
+        x_conv3 = self.conv3(x_conv2, batch_dict)
+        x_conv4 = self.conv4(x_conv3, batch_dict)
         x_conv4 = x_conv4.dense()
 
         batch_dict.update({

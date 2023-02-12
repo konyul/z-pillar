@@ -43,7 +43,7 @@ class Transformer(nn.Module):
                  num_decoder_layers=1, dim_feedforward=64, dropout=0.1,
                  activation="relu", normalize_before=False,
                  return_intermediate_dec=False,
-                 num_bins=16, pos_enc='z'):
+                 num_bins=32, pos_enc='z'):
         super().__init__()
         decoder_layer = TransformerDecoderLayer(d_model, nhead, dim_feedforward,
                                                 dropout, activation, normalize_before)
@@ -55,7 +55,8 @@ class Transformer(nn.Module):
         self.d_model = d_model
         self.nhead = nhead
         self.num_bins = num_bins
-        self.up_dimension = MLP(input_dim = 5, hidden_dim = int(d_model/2), output_dim = d_model, num_layers = 2)
+        if False:
+            self.up_dimension = MLP(input_dim = 5, hidden_dim = int(d_model/2), output_dim = d_model, num_layers = 2)
         self.relu = nn.ReLU()
         self.pos_enc = pos_enc
 
@@ -89,9 +90,13 @@ class Transformer(nn.Module):
         return pos_embed
 
     def forward(self, query_embed, data_dict):
-        src, occupied_mask = self.binning(data_dict)
-        src = src[occupied_mask]
-        src = self.up_dimension(src)
+        if type(data_dict) is dict:            
+            src, occupied_mask = self.binning(data_dict)
+            src = src[occupied_mask]
+            src = self.up_dimension(src)
+        else:
+            src = data_dict
+            occupied_mask = None
         bs, n, c = src.shape
         if self.pos_enc:
             pos_embed = self.positional_encoding(self.pos_enc, src)
@@ -355,12 +360,12 @@ def _get_clones(module, N):
 
 def build_transformer(args, numbins):
     return Transformer(
-        d_model=args.hidden_dim,
-        nhead=args.nheads,
-        dim_feedforward=args.dim_feedforward,
-        num_encoder_layers=args.enc_layers,
-        num_decoder_layers=args.dec_layers,
-        normalize_before=args.pre_norm,
+        d_model=args.get('hidden_dim',32),
+        nhead=args.get('nheads',1),
+        dim_feedforward=args.get('dim_feedforward',64),
+        num_encoder_layers=args.get('enc_layers',1),
+        num_decoder_layers=args.get('dec_layers',1),
+        normalize_before=args.get('pre_norm',False),
         return_intermediate_dec=True,
         num_bins=numbins,
         pos_enc=args.get('pos_enc',False)

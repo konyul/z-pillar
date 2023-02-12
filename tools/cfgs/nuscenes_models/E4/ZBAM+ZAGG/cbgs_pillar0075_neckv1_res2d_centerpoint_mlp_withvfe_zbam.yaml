@@ -70,11 +70,15 @@ MODEL:
         USE_CLUSTER_XYZ: False
         USE_NORM: True
         NUM_FILTERS: [ 32 ]
-
+        ZPILLAR: MLP
+        ZPILLAR_CFG: {
+          input_channel: 5,
+          output_channel: 32
+        }
     BACKBONE_3D:
         NAME: PillarResBackBone8x
         ZBAM_CFG: {
-          zbam: ZCONV,
+          zbam: ZCONV_CBAM_VFE,
           point_channel: 32,
           feat_channel: 32,
           output_channel: 32

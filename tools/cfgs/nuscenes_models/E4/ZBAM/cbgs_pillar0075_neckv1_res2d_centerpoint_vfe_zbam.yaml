@@ -74,8 +74,8 @@ MODEL:
     BACKBONE_3D:
         NAME: PillarResBackBone8x
         ZBAM_CFG: {
-          zbam: ZCONV,
-          point_channel: 32,
+          zbam: VFE,
+          point_channel: 8,
           feat_channel: 32,
           output_channel: 32
         }

@@ -57,11 +57,11 @@ class ChannelPool(nn.Module):
         return torch.cat( (torch.max(x,1)[0].unsqueeze(1), torch.mean(x,1).unsqueeze(1)), dim=1 )
 
 class SpatialGate(nn.Module):
-    def __init__(self):
+    def __init__(self, kernel_size):
         super(SpatialGate, self).__init__()
-        kernel_size = 32
+        kernel_size = kernel_size
         self.compress = ChannelPool()
-        self.spatial = BasicConv(2, 1, kernel_size, stride=1, padding=0, relu=False)
+        self.spatial = BasicConv(2, 1, kernel_size, stride=1, padding=(kernel_size-1) // 2, relu=False)
     def forward(self, x):
         x_compress = self.compress(x)
         x_out = self.spatial(x_compress)
@@ -69,12 +69,12 @@ class SpatialGate(nn.Module):
         return x * scale
 
 class ZBAM(nn.Module):
-    def __init__(self, gate_channels, reduction_ratio=16, pool_types=['avg', 'max'], no_spatial=False):
+    def __init__(self, gate_channels, reduction_ratio=16, pool_types=['avg', 'max'], no_spatial=False, kernel_size=7):
         super(ZBAM, self).__init__()
         self.ChannelGate = ChannelGate(gate_channels, reduction_ratio, pool_types)
         self.no_spatial=no_spatial
         if not no_spatial:
-            self.SpatialGate = SpatialGate()
+            self.SpatialGate = SpatialGate(kernel_size)
     def forward(self, x):
         x_out = self.ChannelGate(x)
         if not self.no_spatial:

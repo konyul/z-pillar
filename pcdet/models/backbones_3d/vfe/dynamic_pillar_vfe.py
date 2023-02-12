@@ -209,8 +209,8 @@ class DynamicPillarVFESimple2D(VFETemplate):
         if self.zpillar == 'Transformer':
             self.zpillar_model = build_transformer(model_cfg.ZPILLAR_CFG, self.numbins)
             self.query_embed = nn.Embedding(1, model_cfg.ZPILLAR_CFG.hidden_dim)
-        elif self.zpillar == 'MLP':
-            self.zpillar_model = build_mlp(model_cfg.ZPILLAR_CFG, self.numbins)
+        elif self.zpillar == 'Zconv' or self.zpillar == 'CBAM' or self.zpillar == 'ZcCBAM':
+            self.zpillar_model = build_mlp(model_cfg.ZPILLAR_CFG, self.numbins, model_name = self.zpillar)
         pfn_layers = []
         for i in range(len(num_filters) - 1):
             in_filters = num_filters[i]
@@ -311,7 +311,7 @@ class DynamicPillarVFESimple2D(VFETemplate):
             points_dist = torch.norm(points[:, 1:4], 2, dim=1, keepdim=True)
             features.append(points_dist)
         features = torch.cat(features, dim=-1)
-        batch_dict['pointsv2'] = torch.cat([points[:, :1],features],dim=1)
+        batch_dict['points_with_f_center'] = torch.cat([points[:, :1],features],dim=1)
         for pfn in self.pfn_layers:
             features = pfn(features, unq_inv)
 
