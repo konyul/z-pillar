@@ -52,7 +52,7 @@ DATA_CONFIG:
           }
 
         - NAME: transform_points_to_voxels
-          VOXEL_SIZE: [0.075, 0.075, 0.25]
+          VOXEL_SIZE: [0.075, 0.075, 0.2]
           MAX_POINTS_PER_VOXEL: 5
           MAX_NUMBER_OF_VOXELS: {
             'train': 1200000,
@@ -75,9 +75,10 @@ MODEL:
         NAME: PillarResBackBone8x
         ZBAM_CFG: {
           zbam: VFE,
-          point_channel: 8,
+          input_channel: 8,
           feat_channel: 32,
-          output_channel: 32
+          output_channel: 32,
+          encoder_level: [1, 2]
         }
 
     BACKBONE_2D:

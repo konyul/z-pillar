@@ -9,21 +9,17 @@ try:
 except Exception as e:
     # Incase someone doesn't want to use dynamic pillar vfe and hasn't installed torch_scatter
     pass
-
+from pcdet.models.model_utils.zbam import build_zbam
 def post_act_block(in_channels, out_channels, kernel_size, indice_key=None, stride=1, padding=0,
                    conv_type='subm', norm_fn=None):
 
-    if conv_type == 'subm':
-        conv = spconv.SubMConv2d(in_channels, out_channels, kernel_size, bias=False, indice_key=indice_key)
-    elif conv_type == 'spconv':
-        conv = spconv.SparseConv2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding,
+    if conv_type == 'spconv':
+        conv = SparseConv2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding,
                                    bias=False, indice_key=indice_key)
-    elif conv_type == 'inverseconv':
-        conv = spconv.SparseInverseConv2d(in_channels, out_channels, kernel_size, indice_key=indice_key, bias=False)
     else:
         raise NotImplementedError
 
-    m = spconv.SparseSequential(
+    m = SparseSequential(
         conv,
         norm_fn(out_channels),
         nn.ReLU(),
@@ -45,7 +41,7 @@ def post_act_block_dense(in_channels, out_channels, kernel_size, stride=1, paddi
 class SparseBasicBlock(spconv.SparseModule):
     expansion = 1
 
-    def __init__(self, inplanes, planes, stride=1, norm_fn=None, downsample=None, indice_key=None):
+    def __init__(self, inplanes, planes, stride=1, norm_fn=None, downsample=None, indice_key=None, zbam=None):
         super(SparseBasicBlock, self).__init__()
 
         assert norm_fn is not None
@@ -61,8 +57,11 @@ class SparseBasicBlock(spconv.SparseModule):
         self.bn2 = norm_fn(planes)
         self.downsample = downsample
         self.stride = stride
+        self.zbam = zbam
+        if self.zbam is not None:
+            self.zbam_model = build_zbam(self.zbam)
 
-    def forward(self, x):
+    def forward(self, x, data_dict=None):
         identity = x
 
         out = self.conv1(x)
@@ -77,6 +76,9 @@ class SparseBasicBlock(spconv.SparseModule):
 
         out = replace_feature(out, out.features + identity.features)
         out = replace_feature(out, self.relu(out.features))
+
+        if self.zbam:
+            out = self.zbam_model(out, data_dict)
 
         return out
 
@@ -315,26 +317,30 @@ class PillarResBackBone8x(nn.Module):
         block = post_act_block
         dense_block = post_act_block_dense
 
-        self.conv1 = spconv.SparseSequential(
+        self.zbam = model_cfg.get("ZBAM_CFG", None)
+        if self.zbam:
+            self.zbam.update({"num_bins":grid_size[-1]})
+
+        self.conv1 = SparseSequential(
             SparseBasicBlock(32, 32, norm_fn=norm_fn, indice_key='res1'),
-            SparseBasicBlock(32, 32, norm_fn=norm_fn, indice_key='res1'),
+            SparseBasicBlock(32, 32, norm_fn=norm_fn, indice_key='res1', zbam=self.zbam),
         )
 
-        self.conv2 = spconv.SparseSequential(
+        self.conv2 = SparseSequential(
             # [1600, 1408] <- [800, 704]
             block(32, 64, 3, norm_fn=norm_fn, stride=2, padding=1, indice_key='spconv2', conv_type='spconv'),
             SparseBasicBlock(64, 64, norm_fn=norm_fn, indice_key='res2'),
-            SparseBasicBlock(64, 64, norm_fn=norm_fn, indice_key='res2'),
+            SparseBasicBlock(64, 64, norm_fn=norm_fn, indice_key='res2', zbam=self.zbam),
         )
 
-        self.conv3 = spconv.SparseSequential(
+        self.conv3 = SparseSequential(
             # [800, 704] <- [400, 352]
             block(64, 128, 3, norm_fn=norm_fn, stride=2, padding=1, indice_key='spconv3', conv_type='spconv'),
             SparseBasicBlock(128, 128, norm_fn=norm_fn, indice_key='res3'),
             SparseBasicBlock(128, 128, norm_fn=norm_fn, indice_key='res3'),
         )
 
-        self.conv4 = spconv.SparseSequential(
+        self.conv4 = SparseSequential(
             # [400, 352] <- [200, 176]
             block(128, 256, 3, norm_fn=norm_fn, stride=2, padding=1, indice_key='spconv4', conv_type='spconv'),
             SparseBasicBlock(256, 256, norm_fn=norm_fn, indice_key='res4'),
@@ -360,10 +366,10 @@ class PillarResBackBone8x(nn.Module):
             spatial_shape=self.sparse_shape,
             batch_size=batch_size
         )
-        x_conv1 = self.conv1(input_sp_tensor)
-        x_conv2 = self.conv2(x_conv1)
-        x_conv3 = self.conv3(x_conv2)
-        x_conv4 = self.conv4(x_conv3)
+        x_conv1 = self.conv1(input_sp_tensor, batch_dict)
+        x_conv2 = self.conv2(x_conv1, batch_dict)
+        x_conv3 = self.conv3(x_conv2, batch_dict)
+        x_conv4 = self.conv4(x_conv3, batch_dict)
         x_conv4 = x_conv4.dense()
 
         batch_dict.update({

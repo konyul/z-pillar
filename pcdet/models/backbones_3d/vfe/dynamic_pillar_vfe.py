@@ -280,6 +280,7 @@ class DynamicPillarVFESimple2D(VFETemplate):
                        points_coords[:, 1]
         unq_coords, unq_inv, unq_cnt = torch.unique(merge_coords, return_inverse=True, return_counts=True, dim=0)
         batch_dict['pillar_merge_coords'] = merge_coords
+        batch_dict['unq_inv'] = unq_inv
         batch_dict['points'] = points
         batch_dict['point_cloud_range'] = self.point_cloud_range
         batch_dict['voxel_size'] = self.voxel_size
