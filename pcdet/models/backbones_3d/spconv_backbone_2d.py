@@ -367,16 +367,16 @@ class PillarResBackBone8x(nn.Module):
         )
         x_conv1 = self.conv1(input_sp_tensor)
         if self.zbam and 1 in self.zbam.encoder_level:
-            x_conv1 = self.zbam_model(x_conv1, batch_dict, 1)
+            x_conv1 = self.zbam_model(x_conv1, batch_dict, 1, self.zbam)
         x_conv2 = self.conv2(x_conv1)
         if self.zbam and 2 in self.zbam.encoder_level:
-            x_conv2 = self.zbam_model(x_conv2, batch_dict, 2)
+            x_conv2 = self.zbam_model(x_conv2, batch_dict, 2, self.zbam)
         x_conv3 = self.conv3(x_conv2)
         if self.zbam and 3 in self.zbam.encoder_level:
-            x_conv3 = self.zbam_model(x_conv3, batch_dict, 3)
+            x_conv3 = self.zbam_model(x_conv3, batch_dict, 3, self.zbam)
         x_conv4 = self.conv4(x_conv3)
         if self.zbam and 4 in self.zbam.encoder_level:
-            x_conv4 = self.zbam_model(x_conv4, batch_dict, 4)
+            x_conv4 = self.zbam_model(x_conv4, batch_dict, 4, self.zbam)
         x_conv4 = x_conv4.dense()
 
         batch_dict.update({

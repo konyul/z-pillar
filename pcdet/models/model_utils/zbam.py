@@ -256,7 +256,6 @@ class Zconv(CBAM):
         scale_xy = grid_size[0] * grid_size[1]
         scale_y = grid_size[1]
         v_feat_coords = voxel_coords[:, 0] * scale_xy + voxel_coords[:, 3] * scale_y + voxel_coords[:, 2]
-        #ori_coords = torch.unique(data_dict['sparse_input'].__dict__['indice_dict']['spconv2'].__dict__['out_indices'],dim=0)
         unq_coords, unq_inv, unq_cnt = torch.unique(v_feat_coords, return_inverse=True, return_counts=True, dim=0)
         src = voxels.new_zeros((unq_coords.shape[0], self.num_bins, voxels.shape[1]))
         src[unq_inv, voxel_coords[:, 1]] = voxels
@@ -280,6 +279,74 @@ class Zconv(CBAM):
         data_dict['points_sorted'] = torch.cat([points_sorted[:,:1],points_sorted[:,4:]],dim=1)
         return data_dict
     
+    def LID(self, points, points_coords_3d, point_cloud_range, grid_size):
+        points_coords_z = (points[:, 1:4] - point_cloud_range[0:3])[:,2]
+        def LID(points_coords_z, points_coords_3d, direction):
+            depth_range = 8
+            half_grid_size = grid_size[-1]/2
+            bin_size = 2 * (depth_range/2) / (half_grid_size * (1 + half_grid_size))
+            if direction== 'upper':
+                var = points_coords_z>4
+            if direction == 'lower':
+                var = points_coords_z<=4
+            _points_coords_z = points_coords_z[var]
+            _points_coords_3d = points_coords_3d[var]
+            if direction == 'lower':
+                _points_coords_z = -_points_coords_z + 4
+            indices = 0.5 * torch.sqrt(1 + 8 * (_points_coords_z) / bin_size)
+            mask = (indices < 0) | (indices > half_grid_size) | (~torch.isfinite(indices))
+            indices[mask] = half_grid_size.float()
+            indices = indices.type(torch.int64)
+            _points_coords_3d = torch.cat([_points_coords_3d[:,:2],indices[:,None]],dim=-1)
+            if direction == 'upper':
+                _points_coords_3d[:,2] = _points_coords_3d[:,2] + 20
+            return _points_coords_3d
+        upper = points_coords_z>4
+        lower = points_coords_z<=4
+        upper_points_coords_3d = LID(points_coords_z, points_coords_3d, "upper")
+        lower_points_coords_3d = LID(points_coords_z, points_coords_3d, "lower")
+        new_points_coords = points_coords_3d.new_zeros((points_coords_3d.shape))
+        new_points_coords[lower] = lower_points_coords_3d.to(torch.int32)
+        new_points_coords[upper] = upper_points_coords_3d.to(torch.int32)
+        new_points_coords[:,2] -= new_points_coords[:,2]-1
+        return new_points_coords
+
+    def focal_dyn_voxelization(self, data_dict):
+        points = data_dict['points_sorted']
+        points_data = data_dict['points_feature']
+        point_cloud_range = data_dict['point_cloud_range']
+        voxel_size = data_dict['voxel_size']
+        grid_size = data_dict['grid_size']
+        scale_xyz = grid_size[0] * grid_size[1] * grid_size[2]
+        scale_yz = grid_size[1] * grid_size[2]
+        scale_z = grid_size[2]
+        point_coords = torch.floor((points[:, 1:4] - point_cloud_range[0:3]) / voxel_size).int()
+        focal_points_coords = self.LID(points, point_coords, point_cloud_range, grid_size)
+        if 'points_indices' in data_dict:
+            points_indices = data_dict['points_indices']
+            merge_coords = points[:, 0].int() * scale_xyz + \
+                        points_indices[:, 2] * scale_yz + \
+                        points_indices[:, 1] * scale_z + \
+                        focal_points_coords[:, 2]
+        else:
+            merge_coords = points[:, 0].int() * scale_xyz + \
+                        focal_points_coords[:, 0] * scale_yz + \
+                        focal_points_coords[:, 1] * scale_z + \
+                        focal_points_coords[:, 2]
+        unq_coords, unq_inv, unq_cnt = torch.unique(merge_coords, return_inverse=True, return_counts=True)
+
+        points_mean = torch_scatter.scatter_mean(points_data, unq_inv, dim=0)
+        
+        unq_coords = unq_coords.int()
+        voxel_coords = torch.stack((unq_coords // scale_xyz,
+                                    (unq_coords % scale_xyz) // scale_yz,
+                                    (unq_coords % scale_yz) // scale_z,
+                                    unq_coords % scale_z), dim=1)
+        voxel_coords = voxel_coords[:, [0, 3, 2, 1]]
+        data_dict['voxel_features'] = points_mean.contiguous()
+        data_dict['voxel_features_coords'] = voxel_coords.contiguous()
+        return data_dict
+    
     def point_sum_sparse(self, data_dict, downsample_level):
         points = data_dict['points_with_f_center']
         unq_inv = data_dict['unq_inv']
@@ -299,13 +366,15 @@ class Zconv(CBAM):
         data_dict['points_indices'] = points_indices
         return data_dict
         
-    def forward(self, sparse_input, data_dict, downsample_level=False):
+    def forward(self, sparse_input, data_dict, downsample_level=False, zbam_config=None):
         data_dict['sparse_input'] = sparse_input
-
         if downsample_level>1:
             data_dict = self.point_sum_sparse(data_dict, downsample_level)
         else:
             data_dict = self.point_sum_subm(data_dict)
+        if 'focal_disc' in zbam_config:
+            data_dict = self.focal_dyn_voxelization(data_dict)
+            src, occupied_mask = self.binning(data_dict)
         data_dict = self.dyn_voxelization(data_dict)
         src, occupied_mask = self.binning(data_dict)
         src = src[occupied_mask]
