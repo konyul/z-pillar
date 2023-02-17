@@ -367,7 +367,24 @@ class Zconv(CBAM):
         data_dict['points_sorted'] = torch.cat([new_points[:,:1],new_points[:,4:]],dim=1)
         data_dict['points_indices'] = points_indices
         return data_dict
-        
+    
+    def point_sum_sparse(self, data_dict, downsample_level):
+        points = data_dict['points_with_f_center']
+        unq_inv = data_dict['unq_inv']
+        sparse_indices = data_dict['sparse_input'].indices
+        match_index = data_dict['sparse_input'].__dict__['indice_dict']['spconv'+str(downsample_level)].__dict__['pair_bwd']
+        sparse_feat = data_dict['sparse_input']._features
+        unq_inv =  match_index[:,unq_inv].permute(1,0).max(axis=-1)[0].long()
+        output = sparse_feat[unq_inv, :] + self.conv_list[self.encoder_levels.index(downsample_level)](points[:,1:])
+        points_indices_inv = torch.arange(0,sparse_feat.shape[0]).int()
+        points_indices_inv = points_indices_inv[unq_inv]
+        points_indices = sparse_indices[unq_inv]
+        data_dict['points_feature'] = output
+        data_dict['points_sorted'] = torch.cat([points[:,:1],points[:,4:]],dim=1)
+        data_dict['points_indices_inv'] = points_indices_inv
+        data_dict['points_indices'] = points_indices
+        return data_dict
+    
     def forward(self, sparse_input, data_dict, downsample_level=False, zbam_config=None):
         data_dict['sparse_input'] = sparse_input
         if downsample_level>1:

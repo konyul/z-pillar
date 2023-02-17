@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch import nn
 import torch_scatter
 import time
-
+from pcdet.ops.pointnet2.pointnet2_batch import pointnet2_utils
 
 class Conv1d(nn.Module):
     def __init__(self,
@@ -57,14 +57,20 @@ class Zconv(nn.Module):
             conv_list.append(Conv1d(8, self.output_channel*encoder_level))
         self.bin_shuffle_list = nn.Sequential(*bin_shuffle_list)
         self.conv_list = nn.Sequential(*conv_list)
-        self.grid_size = config.grid_size
+        self.grid_size = torch.tensor(config.grid_size).cuda()
         self.scale_xy = self.grid_size[0] * self.grid_size[1]
         self.scale_y = self.grid_size[1]
-        self.voxel_size = config.voxel_size
-        self.point_cloud_range = config.point_cloud_range
+        self.voxel_size = torch.tensor(config.voxel_size).cuda()
+        self.point_cloud_range = torch.tensor(config.point_cloud_range).cuda()
         self.scale_xyz = self.grid_size[0] * self.grid_size[1] * self.grid_size[2]
         self.scale_yz = self.grid_size[1] * self.grid_size[2]
         self.scale_z = self.grid_size[2]
+        self.nsamples = 1
+        self.point_sample = config.get('sampling_type',False)
+        if self.point_sample:
+            self.sampling_type = config.sampling_type
+            if self.sampling_type == 'FPS':
+                self.sampler = pointnet2_utils.QueryAndGroup(1.0, self.nsamples, use_xyz=True)
         
     def binning(self, data_dict):
         voxels, voxel_coords = data_dict['voxel_features'], data_dict['voxel_features_coords'].to(torch.long)
@@ -122,43 +128,81 @@ class Zconv(nn.Module):
         data_dict['points_sorted'] = torch.cat([points_sorted[:,:1],points_sorted[:,4:]],dim=1)
         return data_dict
     
+    def FPS(self, points, unq_inv):
+        B = (points[:,0].max()+1).int()
+        N = 400000
+        input = torch.zeros(B,N,3).cuda()
+        features = torch.zeros(B,N,9).cuda()
+        for i in range(B):
+            batch_mask = (points[:,0]==i)
+            batch_points = points[batch_mask][:,4:7]
+            batch_feature = points[batch_mask]
+            batch_feature[:,4] = unq_inv[batch_mask]
+            num_points = batch_points.shape[0]
+            input[i][:num_points] = batch_points
+            features[i][:num_points] = batch_feature
+        xyz_flipped = input.transpose(1,2).contiguous()
+        nsamples = 100000
+        new_xyz = pointnet2_utils.gather_operation(
+                xyz_flipped,
+                pointnet2_utils.farthest_point_sample(input, nsamples)
+            ).transpose(1, 2).contiguous()
+        new_features = self.sampler(input, new_xyz, features.permute(0,2,1).contiguous()).squeeze(-1)
+        mask = (new_features[:,[0,1,2]].sum(1)!=0).reshape(-1)
+        new_features = new_features[:,[3,4,5,6,0,1,2,10,11],:]
+        new_unq_inv = new_features[:,7].reshape(-1)
+        new_features = new_features.permute(0,2,1).reshape(-1,9)
+        new_features = new_features[mask]
+        new_unq_inv = new_unq_inv[mask]
+        return new_features, new_unq_inv.long()
+    
+    def RS(self, points, unq_inv):
+        B = (points[:,0].max()+1).int()
+        N = 200000
+        input = torch.zeros(B,N,10).cuda()
+        for i in range(B):
+            batch_mask = (points[:,0]==i)
+            batch_input = points[batch_mask]
+            batch_inv = unq_inv[batch_mask]
+            num_points = batch_input.shape[0]
+            if num_points > N:
+                input[i] = torch.cat([batch_input[:N],batch_inv[:N,None]],dim=-1)
+            else:
+                input[i][:num_points] = torch.cat([batch_input,batch_inv[:,None]],dim=-1)
+        rand_idx = torch.randint(0,input.shape[1],(100000,))
+        input = input[:,rand_idx,:].reshape(-1,10)
+        mask = (input.sum(-1)!=0)
+        input = input[mask]
+        new_points = input[:,:-1]
+        new_unq_inv = input[:,-1]
+        return new_points, new_unq_inv.long()
+    
     def point_sum_sparse(self, data_dict, downsample_level):
         points = data_dict['points_with_f_center']
         unq_inv = data_dict['unq_inv']
         match_index = data_dict['sparse_input'].__dict__['indice_dict']['spconv'+str(downsample_level)].__dict__['pair_bwd']
+        if self.point_sample:
+            if self.sampling_type == 'FPS':
+                points, unq_inv = self.FPS(points, unq_inv)
+            elif self.sampling_type == 'RS':
+                points, unq_inv = self.RS(points, unq_inv)
         sparse_feat = data_dict['sparse_input']._features
         sparse_indices = data_dict['sparse_input'].indices
         converted_pillar_merge_coords =  match_index[:,unq_inv].permute(1,0).long()
         flatten_converted_pillar_merge_coords = converted_pillar_merge_coords.reshape(-1)
         mask = (flatten_converted_pillar_merge_coords!=-1)
         ori_cnt = (converted_pillar_merge_coords!=-1).sum(-1)
-        new_sparse_feat = sparse_feat[flatten_converted_pillar_merge_coords][mask]
+        expand_mask = flatten_converted_pillar_merge_coords[mask]
+        new_sparse_feat = sparse_feat[expand_mask]
         points_indices_inv = torch.arange(0,sparse_feat.shape[0]).int()
-        points_indices_inv = points_indices_inv[flatten_converted_pillar_merge_coords][mask]
+        points_indices_inv = points_indices_inv[expand_mask]
         new_points = torch.repeat_interleave(points, ori_cnt, dim=0)
-        points_indices = sparse_indices[flatten_converted_pillar_merge_coords][mask]
+        points_indices = sparse_indices[expand_mask]
         output = new_sparse_feat + self.conv_list[self.encoder_levels.index(downsample_level)](new_points[:,1:])
         data_dict['points_feature'] = output
         data_dict['points_sorted'] = torch.cat([new_points[:,:1],new_points[:,4:]],dim=1)
         data_dict['points_indices'] = points_indices
         data_dict['points_indices_inv'] = points_indices_inv
-        return data_dict
-    
-    def point_sum_sparse(self, data_dict, downsample_level):
-        points = data_dict['points_with_f_center']
-        unq_inv = data_dict['unq_inv']
-        sparse_indices = data_dict['sparse_input'].indices
-        match_index = data_dict['sparse_input'].__dict__['indice_dict']['spconv'+str(downsample_level)].__dict__['pair_bwd']
-        sparse_feat = data_dict['sparse_input']._features
-        unq_inv =  match_index[:,unq_inv].permute(1,0).max(axis=-1)[0].long()
-        output = sparse_feat[unq_inv, :] + self.conv_list[self.encoder_levels.index(downsample_level)](points[:,1:])
-        points_indices_inv = torch.arange(0,sparse_feat.shape[0]).int()
-        points_indices_inv = points_indices_inv[unq_inv]
-        points_indices = sparse_indices[unq_inv]
-        data_dict['points_feature'] = output
-        data_dict['points_sorted'] = torch.cat([points[:,:1],points[:,4:]],dim=1)
-        data_dict['points_indices_inv'] = points_indices_inv
-        data_dict['points_indices'] = points_indices
         return data_dict
 
     def forward(self, sparse_input, data_dict, downsample_level=False, zbam_config=None):

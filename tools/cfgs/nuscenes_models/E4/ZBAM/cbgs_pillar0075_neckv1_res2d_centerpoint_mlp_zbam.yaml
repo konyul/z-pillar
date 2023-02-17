@@ -78,7 +78,8 @@ MODEL:
           input_channel: 32,
           feat_channel: 32,
           output_channel: 32,
-          encoder_level: [2]
+          encoder_level: [2],
+          sampling_type: FPS
         }
 
     BACKBONE_2D:
