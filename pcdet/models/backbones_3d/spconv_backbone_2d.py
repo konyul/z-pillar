@@ -313,11 +313,11 @@ class PillarResBackBone8x(nn.Module):
         self.sparse_shape = grid_size[[1, 0]]
         
         block = post_act_block
-        dense_block = post_act_block_dense
 
         self.zbam = model_cfg.get("ZBAM_CFG", None)
         if self.zbam:
-            self.zbam.update({"num_bins" : grid_size[-1]})
+            self.zbam.update({"num_bins" : grid_size[-1],"grid_size": grid_size})
+            self.zbam.update(**kwargs)
             self.zbam_model = build_zbam(self.zbam)
         
         self.conv1 = spconv.SparseSequential(
