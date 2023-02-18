@@ -16,17 +16,37 @@ from pcdet.ops.pointnet2.pointnet2_batch import pointnet2_utils
 class Conv1d(nn.Module):
     def __init__(self,
                  in_channels,
-                 out_channels):
+                 out_channels,
+                 bn=True,
+                 cnt=1):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.linear = nn.Linear(in_channels, out_channels, bias=False)
-        self.norm = nn.BatchNorm1d(out_channels, eps=1e-3, momentum=0.01)
-        self.relu = nn.ReLU()
+        self.bn = bn
+        conv_list = []
+        for i in range(cnt):
+            if i != cnt-1:
+                inter_channels = in_channels//2
+            else:
+                inter_channels = out_channels
+            if self.bn==True:
+                conv_list.append(nn.Sequential(
+                    nn.Linear(in_channels, inter_channels, bias=False),
+                    nn.BatchNorm1d(inter_channels, eps=1e-3, momentum=0.01),
+                    nn.ReLU()
+                )
+                )
+            else:
+                conv_list.append(nn.Sequential(
+                    nn.Linear(in_channels, inter_channels, bias=True),
+                    nn.ReLU()
+                )
+                )
+            in_channels = inter_channels
+        self.conv_list = nn.Sequential(*conv_list)
     def forward(self, x):
-        x = self.linear(x)
-        x = self.norm(x)
-        return self.relu(x)
+        x = self.conv_list(x)
+        return x
 
 class bin_shuffle(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -52,8 +72,12 @@ class Zconv(nn.Module):
         self.input_channel = config.input_channel
         self.num_bins = config.num_bins
         self.output_channel = config.output_channel
+        self.channel_ratio = config.sampling_cfg.get('channel_ratio',1)
+        if self.channel_ratio != 1:
+            channel = config.input_channel*config.encoder_level[0]
+            self.linear = Conv1d(channel,channel*self.channel_ratio,bn=False, cnt=2)
         for encoder_level in self.encoder_levels:
-            bin_shuffle_list.append(bin_shuffle(self.input_channel*encoder_level*self.num_bins, self.output_channel*encoder_level))
+            bin_shuffle_list.append(bin_shuffle(self.input_channel*encoder_level*self.num_bins*self.channel_ratio, self.output_channel*encoder_level))
             conv_list.append(Conv1d(8, self.output_channel*encoder_level))
         self.bin_shuffle_list = nn.Sequential(*bin_shuffle_list)
         self.conv_list = nn.Sequential(*conv_list)
@@ -69,7 +93,7 @@ class Zconv(nn.Module):
         self.point_sample = config.get('sampling_type',False)
         if self.point_sample:
             self.sampling_type = config.sampling_type
-        
+            self.num_points = config.sampling_cfg.get('num_points',5000)
     def binning(self, data_dict):
         voxels, voxel_coords = data_dict['voxel_features'], data_dict['voxel_features_coords'].to(torch.long)
         v_feat_coords = voxel_coords[:, 0] * self.scale_xy + voxel_coords[:, 3] * self.scale_y + voxel_coords[:, 2]
@@ -141,7 +165,7 @@ class Zconv(nn.Module):
             input[i][:num_points] = batch_points
             features[i][:num_points] = batch_feature
         feat_flipped = features.transpose(1,2).contiguous()
-        nsamples = 50000
+        nsamples = self.num_points
         new_var = pointnet2_utils.gather_operation(
                 feat_flipped,
                 pointnet2_utils.farthest_point_sample(input, nsamples)
@@ -164,7 +188,7 @@ class Zconv(nn.Module):
                 input[i] = torch.cat([batch_input[:N],batch_inv[:N,None]],dim=-1)
             else:
                 input[i][:num_points] = torch.cat([batch_input,batch_inv[:,None]],dim=-1)
-        rand_idx = torch.randint(0,input.shape[1],(100000,))
+        rand_idx = torch.randint(0,input.shape[1],(self.num_points,))
         input = input[:,rand_idx,:].reshape(-1,10)
         mask = (input.sum(-1)!=0)
         input = input[mask]
@@ -209,6 +233,7 @@ class Zconv(nn.Module):
         data_dict = self.dyn_voxelization(data_dict)
         src, occupied_mask, unq_idx = self.binning(data_dict)
         src = src[occupied_mask]
+        src = self.linear(src)
         N,P,C = src.shape
         src = src.view(N,P*C)
         src = self.bin_shuffle_list[self.encoder_levels.index(downsample_level)](src)
