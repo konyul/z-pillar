@@ -169,7 +169,7 @@ class Zconv(nn.Module):
                 input[i] = torch.cat([batch_input[:N],batch_inv[:N,None]],dim=-1)
             else:
                 input[i][:num_points] = torch.cat([batch_input,batch_inv[:,None]],dim=-1)
-        rand_idx = torch.randint(0,input.shape[1],(100000,))
+        rand_idx = torch.randint(0,input.shape[1],(50000,))
         input = input[:,rand_idx,:].reshape(-1,10)
         mask = (input.sum(-1)!=0)
         input = input[mask]
@@ -191,7 +191,8 @@ class Zconv(nn.Module):
         L_pair_bwd =  pair_bwd[:,unq_inv].permute(1,0).long()
         L_pair_bwd_flat = L_pair_bwd.reshape(-1)
         cnt = (L_pair_bwd!=-1).sum(-1)
-        expand_mask = L_pair_bwd_flat[(L_pair_bwd_flat!=-1)]
+        mask = (L_pair_bwd_flat!=-1)
+        expand_mask = L_pair_bwd_flat[mask]
         idx_inv = torch.arange(0,sparse_feat.shape[0]).int()
         idx_inv = idx_inv[expand_mask]
         n_sparse_feat = sparse_feat[expand_mask]
