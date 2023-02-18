@@ -17,36 +17,23 @@ class Conv1d(nn.Module):
     def __init__(self,
                  in_channels,
                  out_channels,
-                 bn=True,
-                 cnt=1):
+                 bn=True):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.bn = bn
-        conv_list = []
-        for i in range(cnt):
-            if i != cnt-1:
-                inter_channels = in_channels//2
-            else:
-                inter_channels = out_channels
-            if self.bn==True:
-                conv_list.append(nn.Sequential(
-                    nn.Linear(in_channels, inter_channels, bias=False),
-                    nn.BatchNorm1d(inter_channels, eps=1e-3, momentum=0.01),
-                    nn.ReLU()
-                )
-                )
-            else:
-                conv_list.append(nn.Sequential(
-                    nn.Linear(in_channels, inter_channels, bias=True),
-                    nn.ReLU()
-                )
-                )
-            in_channels = inter_channels
-        self.conv_list = nn.Sequential(*conv_list)
+        self.bn=bn
+        if self.bn==True:
+            self.linear = nn.Linear(in_channels, out_channels, bias=False)
+            self.norm = nn.BatchNorm1d(out_channels, eps=1e-3, momentum=0.01)
+        else:
+            self.linear = nn.Linear(in_channels, out_channels, bias=True)
+        self.relu = nn.ReLU()
     def forward(self, x):
-        x = self.conv_list(x)
-        return x
+        x = self.linear(x)
+        if self.bn==True:
+            x = self.norm(x)
+        return self.relu(x)
+
 
 class bin_shuffle(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -75,9 +62,9 @@ class Zconv(nn.Module):
         self.channel_ratio = config.sampling_cfg.get('channel_ratio',1)
         if self.channel_ratio != 1:
             channel = config.input_channel*config.encoder_level[0]
-            self.linear = Conv1d(channel,channel*self.channel_ratio,bn=False, cnt=2)
+            self.linear = Conv1d(channel,int(channel*self.channel_ratio),bn=False)
         for encoder_level in self.encoder_levels:
-            bin_shuffle_list.append(bin_shuffle(self.input_channel*encoder_level*self.num_bins*self.channel_ratio, self.output_channel*encoder_level))
+            bin_shuffle_list.append(bin_shuffle(int(self.input_channel*encoder_level*self.num_bins*self.channel_ratio), self.output_channel*encoder_level))
             conv_list.append(Conv1d(8, self.output_channel*encoder_level))
         self.bin_shuffle_list = nn.Sequential(*bin_shuffle_list)
         self.conv_list = nn.Sequential(*conv_list)
