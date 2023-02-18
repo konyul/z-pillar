@@ -91,7 +91,6 @@ class Zconv(nn.Module):
     def dyn_voxelization(self, data_dict):
         points = data_dict['points_sorted']
         points_data = data_dict['points_feature']
-        points_indices_inv = data_dict['points_indices_inv']
         point_coords = torch.floor((points[:, 1:4] - self.point_cloud_range[0:3]) / self.voxel_size).int()
         if 'points_indices' in data_dict:
             points_indices = data_dict['points_indices']
@@ -101,9 +100,11 @@ class Zconv(nn.Module):
                     point_coords[:, 1] * self.scale_z + \
                     point_coords[:, 2]
         unq_coords, unq_inv, unq_cnt = torch.unique(merge_coords, return_inverse=True, return_counts=True)
-
+        if 'idx_inv' in data_dict:
+            idx_inv = data_dict['idx_inv']
+            idx = torch_scatter.scatter_mean(idx_inv.cuda(), unq_inv, dim=0)
+            data_dict['unq_idx'] = idx
         points_mean = torch_scatter.scatter_mean(points_data, unq_inv, dim=0)
-        idx = torch_scatter.scatter_mean(points_indices_inv.cuda(), unq_inv, dim=0)
         unq_coords = unq_coords.int()
         voxel_coords = torch.stack((unq_coords // self.scale_xyz,
                                     (unq_coords % self.scale_xyz) // self.scale_yz,
@@ -112,7 +113,6 @@ class Zconv(nn.Module):
         voxel_coords = voxel_coords[:, [0, 3, 2, 1]]
         data_dict['voxel_features'] = points_mean.contiguous()
         data_dict['voxel_features_coords'] = voxel_coords.contiguous()
-        data_dict['unq_idx'] = idx
         return data_dict
 
     def point_sum_subm(self, data_dict):
@@ -180,7 +180,7 @@ class Zconv(nn.Module):
     def point_sum_sparse(self, data_dict, downsample_level):
         points = data_dict['points_with_f_center']
         unq_inv = data_dict['unq_inv']
-        match_index = data_dict['sparse_input'].__dict__['indice_dict']['spconv'+str(downsample_level)].__dict__['pair_bwd']
+        pair_bwd = data_dict['sparse_input'].__dict__['indice_dict']['spconv'+str(downsample_level)].__dict__['pair_bwd']
         if self.point_sample:
             if self.sampling_type == 'FPS':
                 points, unq_inv = self.FPS(points, unq_inv)
@@ -188,21 +188,20 @@ class Zconv(nn.Module):
                 points, unq_inv = self.RS(points, unq_inv)
         sparse_feat = data_dict['sparse_input']._features
         sparse_indices = data_dict['sparse_input'].indices
-        converted_pillar_merge_coords =  match_index[:,unq_inv].permute(1,0).long()
-        flatten_converted_pillar_merge_coords = converted_pillar_merge_coords.reshape(-1)
-        mask = (flatten_converted_pillar_merge_coords!=-1)
-        ori_cnt = (converted_pillar_merge_coords!=-1).sum(-1)
-        expand_mask = flatten_converted_pillar_merge_coords[mask]
-        new_sparse_feat = sparse_feat[expand_mask]
-        points_indices_inv = torch.arange(0,sparse_feat.shape[0]).int()
-        points_indices_inv = points_indices_inv[expand_mask]
-        new_points = torch.repeat_interleave(points, ori_cnt, dim=0)
+        L_pair_bwd =  pair_bwd[:,unq_inv].permute(1,0).long()
+        L_pair_bwd_flat = L_pair_bwd.reshape(-1)
+        cnt = (L_pair_bwd!=-1).sum(-1)
+        expand_mask = L_pair_bwd_flat[(L_pair_bwd_flat!=-1)]
+        idx_inv = torch.arange(0,sparse_feat.shape[0]).int()
+        idx_inv = idx_inv[expand_mask]
+        n_sparse_feat = sparse_feat[expand_mask]
+        n_points = torch.repeat_interleave(points, cnt, dim=0)
         points_indices = sparse_indices[expand_mask]
-        output = new_sparse_feat + self.conv_list[self.encoder_levels.index(downsample_level)](new_points[:,1:])
+        output = n_sparse_feat + self.conv_list[self.encoder_levels.index(downsample_level)](n_points[:,1:])
         data_dict['points_feature'] = output
-        data_dict['points_sorted'] = torch.cat([new_points[:,:1],new_points[:,4:]],dim=1)
+        data_dict['points_sorted'] = torch.cat([n_points[:,:1],n_points[:,4:]],dim=1)
         data_dict['points_indices'] = points_indices
-        data_dict['points_indices_inv'] = points_indices_inv
+        data_dict['idx_inv'] = idx_inv
         return data_dict
 
     def forward(self, sparse_input, data_dict, downsample_level=False, zbam_config=None):
