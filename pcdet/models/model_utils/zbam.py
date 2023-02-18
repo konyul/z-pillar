@@ -69,8 +69,6 @@ class Zconv(nn.Module):
         self.point_sample = config.get('sampling_type',False)
         if self.point_sample:
             self.sampling_type = config.sampling_type
-            if self.sampling_type == 'FPS':
-                self.sampler = pointnet2_utils.QueryAndGroup(1.0, self.nsamples, use_xyz=True)
         
     def binning(self, data_dict):
         voxels, voxel_coords = data_dict['voxel_features'], data_dict['voxel_features_coords'].to(torch.long)
@@ -132,29 +130,26 @@ class Zconv(nn.Module):
         B = (points[:,0].max()+1).int()
         N = 400000
         input = torch.zeros(B,N,3).cuda()
-        features = torch.zeros(B,N,9).cuda()
+        features = torch.zeros(B,N,10).cuda()
         for i in range(B):
             batch_mask = (points[:,0]==i)
-            batch_points = points[batch_mask][:,4:7]
-            batch_feature = points[batch_mask]
-            batch_feature[:,4] = unq_inv[batch_mask]
+            masked_points = points[batch_mask]
+            batch_points = masked_points[:,4:7]
+            masked_unq_inv = unq_inv[batch_mask]
+            batch_feature = torch.cat([masked_points,masked_unq_inv[:,None]],dim=-1)
             num_points = batch_points.shape[0]
             input[i][:num_points] = batch_points
             features[i][:num_points] = batch_feature
-        xyz_flipped = input.transpose(1,2).contiguous()
-        nsamples = 100000
-        new_xyz = pointnet2_utils.gather_operation(
-                xyz_flipped,
+        feat_flipped = features.transpose(1,2).contiguous()
+        nsamples = 50000
+        new_var = pointnet2_utils.gather_operation(
+                feat_flipped,
                 pointnet2_utils.farthest_point_sample(input, nsamples)
             ).transpose(1, 2).contiguous()
-        new_features = self.sampler(input, new_xyz, features.permute(0,2,1).contiguous()).squeeze(-1)
-        mask = (new_features[:,[0,1,2]].sum(1)!=0).reshape(-1)
-        new_features = new_features[:,[3,4,5,6,0,1,2,10,11],:]
-        new_unq_inv = new_features[:,7].reshape(-1)
-        new_features = new_features.permute(0,2,1).reshape(-1,9)
-        new_features = new_features[mask]
-        new_unq_inv = new_unq_inv[mask]
-        return new_features, new_unq_inv.long()
+        new_var = new_var.reshape(-1,10).contiguous()
+        new_points = new_var[:,:-1]
+        new_inv = new_var[:,-1]
+        return new_points, new_inv.long()
     
     def RS(self, points, unq_inv):
         B = (points[:,0].max()+1).int()
@@ -169,7 +164,7 @@ class Zconv(nn.Module):
                 input[i] = torch.cat([batch_input[:N],batch_inv[:N,None]],dim=-1)
             else:
                 input[i][:num_points] = torch.cat([batch_input,batch_inv[:,None]],dim=-1)
-        rand_idx = torch.randint(0,input.shape[1],(50000,))
+        rand_idx = torch.randint(0,input.shape[1],(100000,))
         input = input[:,rand_idx,:].reshape(-1,10)
         mask = (input.sum(-1)!=0)
         input = input[mask]

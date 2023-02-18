@@ -79,7 +79,7 @@ MODEL:
           feat_channel: 32,
           output_channel: 32,
           encoder_level: [2],
-          sampling_type: RS
+          sampling_type: FPS
         }
 
     BACKBONE_2D:
@@ -148,7 +148,7 @@ MODEL:
 
 
 OPTIMIZATION:
-    BATCH_SIZE_PER_GPU: 4
+    BATCH_SIZE_PER_GPU: 2
     NUM_EPOCHS: 20
 
     OPTIMIZER: adam_onecycle
