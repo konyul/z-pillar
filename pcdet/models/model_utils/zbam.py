@@ -233,7 +233,8 @@ class Zconv(nn.Module):
         data_dict = self.dyn_voxelization(data_dict)
         src, occupied_mask, unq_idx = self.binning(data_dict)
         src = src[occupied_mask]
-        src = self.linear(src)
+        if self.channel_ratio != 1:
+            src = self.linear(src)
         N,P,C = src.shape
         src = src.view(N,P*C)
         src = self.bin_shuffle_list[self.encoder_levels.index(downsample_level)](src)
