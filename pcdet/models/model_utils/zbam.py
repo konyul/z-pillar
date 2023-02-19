@@ -139,18 +139,22 @@ class Zconv(nn.Module):
     
     def FPS(self, points, unq_inv):
         B = (points[:,0].max()+1).int()
-        N = 400000
+        N = 200000
         input = torch.zeros(B,N,3).cuda()
         features = torch.zeros(B,N,10).cuda()
         for i in range(B):
             batch_mask = (points[:,0]==i)
-            masked_points = points[batch_mask]
-            batch_points = masked_points[:,4:7]
-            masked_unq_inv = unq_inv[batch_mask]
-            batch_feature = torch.cat([masked_points,masked_unq_inv[:,None]],dim=-1)
-            num_points = batch_points.shape[0]
-            input[i][:num_points] = batch_points
-            features[i][:num_points] = batch_feature
+            batch_input = points[batch_mask]
+            batch_points = batch_input[:,4:7]
+            batch_inv = unq_inv[batch_mask]
+            batch_feature = torch.cat([batch_input,batch_inv[:,None]],dim=-1)
+            num_points = batch_input.shape[0]
+            if num_points > N:
+                input[i] = batch_points[:N]
+                features[i] = batch_feature[:N]
+            else:
+                input[i][:num_points] = batch_points
+                features[i][:num_points] = batch_feature
         feat_flipped = features.transpose(1,2).contiguous()
         nsamples = self.num_points
         new_var = pointnet2_utils.gather_operation(
