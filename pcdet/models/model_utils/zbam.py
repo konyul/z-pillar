@@ -10,7 +10,6 @@ import numpy as np
 import torch.nn.functional as F
 from torch import nn
 import torch_scatter
-import time
 from pcdet.ops.pointnet2.pointnet2_batch import pointnet2_utils
 
 class Conv1d(nn.Module):

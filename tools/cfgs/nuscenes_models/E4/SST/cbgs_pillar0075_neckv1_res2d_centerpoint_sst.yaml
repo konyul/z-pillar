@@ -70,10 +70,41 @@ MODEL:
         USE_CLUSTER_XYZ: False
         USE_NORM: True
         NUM_FILTERS: [ 32 ]
+    
+    SST:
+        NAME: SSTInputLayer
+        DROP_INFO: [{'0':{'max_tokens': 30, 'drop_range': [0, 30]},
+                  '1':{'max_tokens': 60, 'drop_range': [30, 60]},
+                  '2':{'max_tokens': 100, 'drop_range': [60, 100000]}},
+                  
+                  '0':{'max_tokens': 30, 'drop_range': [0, 30]},
+                  '1':{'max_tokens': 60, 'drop_range': [30, 60]},
+                  '2':{'max_tokens': 100, 'drop_range': [60, 100]},
+                  '3':{'max_tokens': 144, 'drop_range': [100, 100000]}
+        ]
+        SHUFFLE_VOXELS: True
+        WINDOW_SHAPE: [12,12]
+        SHIFTS_LIST: [[0, 0], [6, 6]]
+        SSTv1: {
+          'd_model': [32],
+          'nhead': [8],
+          'num_blocks': 1,
+          'dim_feedforward': [64],
+          'output_shape': [1440,1440],
+          'num_attached_conv': 3,
+          'conv_kwargs': [
+              {'kernel_size': 3, 'dilation': 1, 'padding': 1, 'stride': 1},
+              {'kernel_size': 3, 'dilation': 1, 'padding': 1, 'stride': 1},
+              {'kernel_size': 3, 'dilation': 2, 'padding': 2, 'stride': 1},
+          ],
+          'conv_in_channel': 32,
+          'conv_out_channel': 32,
+          'pos_temperature': 10000,
+          'normalize_pos': False
+        }
 
     BACKBONE_3D:
         NAME: PillarResBackBone8x
-
 
     BACKBONE_2D:
         NAME: BaseBEVBackbone

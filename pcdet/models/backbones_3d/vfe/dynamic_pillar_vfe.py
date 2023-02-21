@@ -318,6 +318,12 @@ class DynamicPillarVFESimple2D(VFETemplate):
 
         # generate voxel coordinates
         unq_coords = unq_coords.int()
+        voxel_coords = torch.stack((unq_coords // self.scale_xy,
+                                     (unq_coords * 0),
+                                     (unq_coords % self.scale_xy) // self.scale_y,
+                                     unq_coords % self.scale_y,
+                                     ), dim=1)
+        voxel_coords = voxel_coords[:, [0, 1, 3, 2]]
         pillar_coords = torch.stack((unq_coords // self.scale_xy,
                                      (unq_coords % self.scale_xy) // self.scale_y,
                                      unq_coords % self.scale_y,
@@ -326,5 +332,6 @@ class DynamicPillarVFESimple2D(VFETemplate):
         if self.zpillar is not None:
             features[occupied_mask] = features[occupied_mask] + z_pillar_feat
         batch_dict['pillar_features'] = features
-        batch_dict['pillar_coords'] = batch_dict['voxel_coords'] = pillar_coords
+        batch_dict['pillar_coords'] = pillar_coords
+        batch_dict['voxel_coords'] = voxel_coords
         return batch_dict
