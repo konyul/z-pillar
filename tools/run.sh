@@ -1,5 +1,5 @@
-config="cfgs/nuscenes_models/E4/ZBAM/cbgs_pillar0075_neckv1_res2d_centerpoint_mlp_zbam.yaml"
-arg='E4-E2-Zconv_FPS_pts_10000_ch_64'
+config="cfgs/nuscenes_models/E4/SST/cbgs_pillar0075_neckv1_res2d_centerpoint_sst.yaml"
+arg='E4-sst_nhead_4'
 ckpt="../output/nuscenes_models/E4/ZBAM/cbgs_pillar0075_neckv1_res2d_centerpoint_mlp_zbam/${arg}/ckpt/latest_model.pth"
 
 # train

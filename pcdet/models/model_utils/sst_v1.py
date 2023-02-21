@@ -71,40 +71,6 @@ class SSTv1(nn.Module):
 
         self.debug = debug
 
-        self.num_attached_conv = num_attached_conv
-
-        if num_attached_conv > 0:
-            conv_list = []
-            for i in range(num_attached_conv):
-
-                if isinstance(conv_kwargs, dict):
-                    conv_kwargs_i = conv_kwargs
-                elif isinstance(conv_kwargs, list):
-                    assert len(conv_kwargs) == num_attached_conv
-                    conv_kwargs_i = conv_kwargs[i]
-
-                if i > 0:
-                    conv_in_channel = conv_out_channel
-                conv = nn.Conv2d(
-                    conv_in_channel, conv_out_channel, kernel_size=3,
-                    stride=1, padding=1, dilation=1, bias=False
-                ),
-                if norm_cfg is None:
-                    convnormrelu = nn.Sequential(
-                        conv,
-                        nn.ReLU(inplace=True)
-                    )
-                else:
-                    norm_cfg = {'num_features':conv_out_channel, 'eps':norm_cfg['eps'],'momentum':norm_cfg['momentum']}
-                    convnormrelu = nn.Sequential(
-                        conv[0],
-                        NaiveSyncBatchNorm2d(**norm_cfg),
-                        nn.ReLU(inplace=True)
-                    )
-                conv_list.append(convnormrelu)
-            
-            self.conv_layer = nn.ModuleList(conv_list)
-
     def forward(self, batch_dict):
         '''
         '''

@@ -73,24 +73,24 @@ MODEL:
     
     SST:
         NAME: SSTInputLayer
-        DROP_INFO: [{'0':{'max_tokens': 30, 'drop_range': [0, 30]},
-                  '1':{'max_tokens': 60, 'drop_range': [30, 60]},
-                  '2':{'max_tokens': 100, 'drop_range': [60, 100000]}},
+        DROP_INFO: ['0':{'max_tokens': 600, 'drop_range': [0, 600]},
+                  '1':{'max_tokens': 1200, 'drop_range': [600, 1200]},
+                  '2':{'max_tokens': 1800, 'drop_range': [1200, 1800]},
                   
-                  '0':{'max_tokens': 30, 'drop_range': [0, 30]},
-                  '1':{'max_tokens': 60, 'drop_range': [30, 60]},
-                  '2':{'max_tokens': 100, 'drop_range': [60, 100]},
-                  '3':{'max_tokens': 144, 'drop_range': [100, 100000]}
+                  '0':{'max_tokens': 600, 'drop_range': [0, 600]},
+                  '1':{'max_tokens': 1200, 'drop_range': [600, 1200]},
+                  '2':{'max_tokens': 1800, 'drop_range': [1200, 1800]},
+                  '3':{'max_tokens': 2704, 'drop_range': [1800, 100000]}
         ]
         SHUFFLE_VOXELS: True
-        WINDOW_SHAPE: [12,12]
-        SHIFTS_LIST: [[0, 0], [6, 6]]
+        WINDOW_SHAPE: [52,52]
+        SHIFTS_LIST: [[0, 0], [26, 26]]
         SSTv1: {
           'd_model': [32,],
-          'nhead': [8,],
+          'nhead': [1,],
           'num_blocks': 1,
           'dim_feedforward': [64,],
-          'output_shape': [1440,1440],
+          'output_shape': [1440, 1440],
           'num_attached_conv': 3,
           'conv_kwargs': [
               {'kernel_size': 3, 'dilation': 1, 'padding': 1, 'stride': 1},
