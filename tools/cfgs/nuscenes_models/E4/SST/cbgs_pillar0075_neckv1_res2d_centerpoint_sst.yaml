@@ -86,10 +86,10 @@ MODEL:
         WINDOW_SHAPE: [12,12]
         SHIFTS_LIST: [[0, 0], [6, 6]]
         SSTv1: {
-          'd_model': [32],
-          'nhead': [8],
+          'd_model': [32,],
+          'nhead': [8,],
           'num_blocks': 1,
-          'dim_feedforward': [64],
+          'dim_feedforward': [64,],
           'output_shape': [1440,1440],
           'num_attached_conv': 3,
           'conv_kwargs': [

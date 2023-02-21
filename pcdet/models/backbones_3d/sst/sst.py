@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import random
 from pcdet.models.model_utils.sst_v1 import build_sst
+
 class SSTInputLayer(nn.Module):
     """
     This is one of the core class of SST, converting the output of voxel_encoder to sst input.

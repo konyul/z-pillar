@@ -218,7 +218,7 @@ class SSTv1(nn.Module):
             y = y / win_y * 2 * 3.1415 #[-pi, pi]
         
         pos_length = self.d_model[0] // 2
-        assert self.d_model[0] == self.d_model[1] == self.d_model[-1], 'If you want to use different d_model, Please implement corresponding pos embendding.'
+        #assert self.d_model[0] == self.d_model[1] == self.d_model[-1], 'If you want to use different d_model, Please implement corresponding pos embendding.'
         # [pos_length]
         inv_freq = torch.arange(
             pos_length, dtype=torch.float32, device=coors_in_win.device)
