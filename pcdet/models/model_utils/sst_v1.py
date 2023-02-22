@@ -28,11 +28,18 @@ class SSTv1(nn.Module):
         dropout=0.0,
         activation="gelu",
         output_shape=None,
+        num_attached_conv=2,
+        conv_in_channel=64,
+        conv_out_channel=64,
+        norm_cfg=dict(type='naiveSyncBN2d', eps=1e-3, momentum=0.01),
+        conv_cfg=dict(type='Conv2d', bias=False),
+        debug=True,
         drop_info=None,
         normalize_pos=False,
         pos_temperature=10000,
         window_shape=None,
         in_channel=None,
+        conv_kwargs=dict(kernel_size=3, dilation=2, padding=2, stride=1),
         checkpoint_blocks=[],
         ):
         super().__init__()
@@ -62,10 +69,7 @@ class SSTv1(nn.Module):
 
         self.output_shape = output_shape
 
-<<<<<<< HEAD
-=======
         self.debug = debug
->>>>>>> 8c3b05ccd0da5a8bfb2f66ae3fb9cf51cf654457
 
     def forward(self, batch_dict):
         '''
