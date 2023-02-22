@@ -90,15 +90,7 @@ MODEL:
           'nhead': [8,],
           'num_blocks': 1,
           'dim_feedforward': [64,],
-          'output_shape': [1440,1440],
-          'num_attached_conv': 3,
-          'conv_kwargs': [
-              {'kernel_size': 3, 'dilation': 1, 'padding': 1, 'stride': 1},
-              {'kernel_size': 3, 'dilation': 1, 'padding': 1, 'stride': 1},
-              {'kernel_size': 3, 'dilation': 2, 'padding': 2, 'stride': 1},
-          ],
-          'conv_in_channel': 32,
-          'conv_out_channel': 32,
+          'output_shape': [1440, 1440],
           'pos_temperature': 10000,
           'normalize_pos': False
         }
