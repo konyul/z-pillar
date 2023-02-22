@@ -62,6 +62,10 @@ class SSTv1(nn.Module):
 
         self.output_shape = output_shape
 
+<<<<<<< HEAD
+=======
+        self.debug = debug
+>>>>>>> 8c3b05ccd0da5a8bfb2f66ae3fb9cf51cf654457
 
     def forward(self, batch_dict):
         '''
