@@ -148,26 +148,82 @@ class CBAM(nn.Module):
         data_dict['points_sorted'] = torch.cat([points_sorted[:,:1],points_sorted[:,4:]],dim=1)
         return data_dict
     
-    def point_sum_sparse(self, data_dict):
+    def FPS(self, points, unq_inv):
+        B = (points[:,0].max()+1).int()
+        N = 200000
+        input = torch.zeros(B,N,3).cuda()
+        features = torch.zeros(B,N,10).cuda()
+        for i in range(B):
+            batch_mask = (points[:,0]==i)
+            batch_input = points[batch_mask]
+            batch_points = batch_input[:,4:7]
+            batch_inv = unq_inv[batch_mask]
+            batch_feature = torch.cat([batch_input,batch_inv[:,None]],dim=-1)
+            num_points = batch_input.shape[0]
+            if num_points > N:
+                input[i] = batch_points[:N]
+                features[i] = batch_feature[:N]
+            else:
+                input[i][:num_points] = batch_points
+                features[i][:num_points] = batch_feature
+        feat_flipped = features.transpose(1,2).contiguous()
+        nsamples = self.num_points
+        new_var = pointnet2_utils.gather_operation(
+                feat_flipped,
+                pointnet2_utils.farthest_point_sample(input, nsamples)
+            ).transpose(1, 2).contiguous()
+        new_var = new_var.reshape(-1,10).contiguous()
+        new_points = new_var[:,:-1]
+        new_inv = new_var[:,-1]
+        return new_points, new_inv.long()
+    
+    def RS(self, points, unq_inv):
+        B = (points[:,0].max()+1).int()
+        N = 200000
+        input = torch.zeros(B,N,10).cuda()
+        for i in range(B):
+            batch_mask = (points[:,0]==i)
+            batch_input = points[batch_mask]
+            batch_inv = unq_inv[batch_mask]
+            num_points = batch_input.shape[0]
+            if num_points > N:
+                input[i] = torch.cat([batch_input[:N],batch_inv[:N,None]],dim=-1)
+            else:
+                input[i][:num_points] = torch.cat([batch_input,batch_inv[:,None]],dim=-1)
+        rand_idx = torch.randint(0,input.shape[1],(self.num_points,))
+        input = input[:,rand_idx,:].reshape(-1,10)
+        mask = (input.sum(-1)!=0)
+        input = input[mask]
+        new_points = input[:,:-1]
+        new_unq_inv = input[:,-1]
+        return new_points, new_unq_inv.long()
+    
+    def point_sum_sparse(self, data_dict, downsample_level):
         points = data_dict['points_with_f_center']
-        pillar_merge_coords = data_dict['pillar_merge_coords']
-        unq_coords, unq_inv, unq_cnt = torch.unique(pillar_merge_coords, return_inverse=True, return_counts=True, dim=0)
-        spconv2 = data_dict['sparse_input'].__dict__['indice_dict']['spconv2']
-        ori_to_down = spconv2.__dict__['pair_bwd']
-        converted_pillar_merge_coords =  ori_to_down[:,unq_inv].permute(1,0).long()
+        unq_inv = data_dict['unq_inv']
+        pair_bwd = data_dict['sparse_input'].__dict__['indice_dict']['spconv'+str(downsample_level)].__dict__['pair_bwd']
+        if self.point_sample:
+            if self.sampling_type == 'FPS':
+                points, unq_inv = self.FPS(points, unq_inv)
+            elif self.sampling_type == 'RS':
+                points, unq_inv = self.RS(points, unq_inv)
         sparse_feat = data_dict['sparse_input']._features
-        flatten_converted_pillar_merge_coords = converted_pillar_merge_coords.reshape(-1)
-        mask = (flatten_converted_pillar_merge_coords!=-1)
-        ori_cnt = (converted_pillar_merge_coords!=-1).sum(-1)
-        new_sparse_feat = sparse_feat[flatten_converted_pillar_merge_coords][mask]
-        new_points = torch.repeat_interleave(points, ori_cnt, dim=0)
-        new_converted_pillar_merge_coords = (flatten_converted_pillar_merge_coords)[mask]
         sparse_indices = data_dict['sparse_input'].indices
-        points_indices = sparse_indices[new_converted_pillar_merge_coords]
-        output = new_sparse_feat + self.conv(new_points[:,1:])
+        L_pair_bwd =  pair_bwd[:,unq_inv].permute(1,0).long()
+        L_pair_bwd_flat = L_pair_bwd.reshape(-1)
+        cnt = (L_pair_bwd!=-1).sum(-1)
+        mask = (L_pair_bwd_flat!=-1)
+        expand_mask = L_pair_bwd_flat[mask]
+        idx_inv = torch.arange(0,sparse_feat.shape[0]).int()
+        idx_inv = idx_inv[expand_mask]
+        n_sparse_feat = sparse_feat[expand_mask]
+        n_points = torch.repeat_interleave(points, cnt, dim=0)
+        points_indices = sparse_indices[expand_mask]
+        output = n_sparse_feat + self.conv_list[self.encoder_levels.index(downsample_level)](n_points[:,1:])
         data_dict['points_feature'] = output
-        data_dict['points_sorted'] = torch.cat([new_points[:,:1],new_points[:,4:]],dim=1)
+        data_dict['points_sorted'] = torch.cat([n_points[:,:1],n_points[:,4:]],dim=1)
         data_dict['points_indices'] = points_indices
+        data_dict['idx_inv'] = idx_inv
         return data_dict
 
     def point_concat(self, data_dict):

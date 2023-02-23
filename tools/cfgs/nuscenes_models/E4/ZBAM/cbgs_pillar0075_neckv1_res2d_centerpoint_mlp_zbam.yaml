@@ -78,11 +78,11 @@ MODEL:
           input_channel: 32,
           feat_channel: 32,
           output_channel: 32,
-          encoder_level: [2],
-          sampling_type: FPS,
+          encoder_level: [3],
+          sampling_type: RS,
           sampling_cfg: {
             'num_points': 10000,
-            'channel_ratio': 1
+            'channel_ratio': 0.25
           }
         }
 

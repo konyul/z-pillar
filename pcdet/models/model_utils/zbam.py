@@ -5,7 +5,6 @@ import math
 from easydict import EasyDict
 
 import torch
-import cv2
 import numpy as np
 import torch.nn.functional as F
 from torch import nn
@@ -60,11 +59,13 @@ class Zconv(nn.Module):
         self.output_channel = config.output_channel
         self.channel_ratio = config.sampling_cfg.get('channel_ratio',1)
         if self.channel_ratio != 1:
-            channel = config.input_channel*config.encoder_level[0]
+            channel = config.input_channel*(2**(config.encoder_level[0]-1))
             self.linear = Conv1d(channel,int(channel*self.channel_ratio),bn=False)
         for encoder_level in self.encoder_levels:
-            bin_shuffle_list.append(bin_shuffle(int(self.input_channel*encoder_level*self.num_bins*self.channel_ratio), self.output_channel*encoder_level))
-            conv_list.append(Conv1d(8, self.output_channel*encoder_level))
+            out_channel = self.output_channel*(2**(encoder_level-1))
+            in_channel = int(self.input_channel*(2**(encoder_level-1))*self.num_bins*self.channel_ratio)
+            bin_shuffle_list.append(bin_shuffle(in_channel, out_channel))
+            conv_list.append(Conv1d(8, out_channel))
         self.bin_shuffle_list = nn.Sequential(*bin_shuffle_list)
         self.conv_list = nn.Sequential(*conv_list)
         self.grid_size = torch.tensor(config.grid_size).cuda()
@@ -186,27 +187,40 @@ class Zconv(nn.Module):
         new_unq_inv = input[:,-1]
         return new_points, new_unq_inv.long()
     
-    def point_sum_sparse(self, data_dict, downsample_level):
+    def point_gen(self, data_dict, downsample_level):
         points = data_dict['points_with_f_center']
         unq_inv = data_dict['unq_inv']
+        unq_inv = unq_inv.long().cuda()
         pair_bwd = data_dict['sparse_input'].__dict__['indice_dict']['spconv'+str(downsample_level)].__dict__['pair_bwd']
         if self.point_sample:
             if self.sampling_type == 'FPS':
                 points, unq_inv = self.FPS(points, unq_inv)
             elif self.sampling_type == 'RS':
                 points, unq_inv = self.RS(points, unq_inv)
-        sparse_feat = data_dict['sparse_input']._features
-        sparse_indices = data_dict['sparse_input'].indices
         L_pair_bwd =  pair_bwd[:,unq_inv].permute(1,0).long()
         L_pair_bwd_flat = L_pair_bwd.reshape(-1)
         cnt = (L_pair_bwd!=-1).sum(-1)
         mask = (L_pair_bwd_flat!=-1)
         expand_mask = L_pair_bwd_flat[mask]
-        idx_inv = torch.arange(0,sparse_feat.shape[0]).int()
+        idx_inv = torch.arange(0, pair_bwd.max()+1).int()
         idx_inv = idx_inv[expand_mask]
-        n_sparse_feat = sparse_feat[expand_mask]
         n_points = torch.repeat_interleave(points, cnt, dim=0)
+        data_dict['expand_mask'] = expand_mask
+        data_dict['points_with_f_center'] = n_points
+        data_dict['unq_inv'] = idx_inv
+        return data_dict
+        
+    def point_sum_sparse(self, data_dict, downsample_level):
+        for level in range(2, downsample_level+1):
+            data_dict = self.point_gen(data_dict, level)
+        expand_mask = data_dict['expand_mask']
+        n_points = data_dict['points_with_f_center']
+        idx_inv = data_dict['unq_inv']
+        sparse_feat = data_dict['sparse_input']._features
+        sparse_indices = data_dict['sparse_input'].indices
+        n_sparse_feat = sparse_feat[expand_mask]
         points_indices = sparse_indices[expand_mask]
+
         output = n_sparse_feat + self.conv_list[self.encoder_levels.index(downsample_level)](n_points[:,1:])
         data_dict['points_feature'] = output
         data_dict['points_sorted'] = torch.cat([n_points[:,:1],n_points[:,4:]],dim=1)
