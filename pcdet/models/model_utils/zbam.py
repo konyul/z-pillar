@@ -236,6 +236,8 @@ class Zconv(nn.Module):
             data_dict = self.point_sum_subm(data_dict)
         data_dict = self.dyn_voxelization(data_dict)
         src, occupied_mask, unq_idx = self.binning(data_dict)
+        if occupied_mask.sum() == 0:
+            return sparse_input
         src = src[occupied_mask]
         if self.channel_ratio != 1:
             src = self.linear(src)

@@ -70,21 +70,23 @@ MODEL:
         USE_CLUSTER_XYZ: False
         USE_NORM: True
         NUM_FILTERS: [ 32 ]
+        ZPILLAR: ZcCBAM
+        ZPILLAR_CFG: {
+          input_channel: 32,
+          output_channel : 32}
 
     BACKBONE_3D:
         NAME: PillarResBackBone8x
-        ZBAM_CFG: {
-          zbam: Zconv,
-          input_channel: 32,
-          feat_channel: 32,
-          output_channel: 32,
-          encoder_level: [3],
-          sampling_type: RS,
-          sampling_cfg: {
-            'num_points': 10000,
-            'channel_ratio': 0.25
-          }
-        }
+        # ZBAM_CFG: {
+        #   zbam: Zconv,
+        #   input_channel: 32,
+        #   feat_channel: 32,
+        #   output_channel: 32,
+        #   encoder_level: [1],
+        #   sampling_cfg: {
+        #     'channel_ratio': 1
+        #   }
+        # }
 
     BACKBONE_2D:
         NAME: BaseBEVBackbone

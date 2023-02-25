@@ -1,6 +1,6 @@
 config="cfgs/nuscenes_models/E4/ZBAM/cbgs_pillar0075_neckv1_res2d_centerpoint_mlp_zbam.yaml"
-arg='E4-E3-Zconv_RS'
-ckpt="../output/nuscenes_models/E4/SST/cbgs_pillar0075_neckv1_res2d_centerpoint_sst/${arg}/ckpt/checkpoint_epoch_20.pth"
+arg='E4-VFE'
+ckpt="../output/nuscenes_models/E4/ZBAM/cbgs_pillar0075_neckv1_res2d_centerpoint_mlp_zbam/${arg}/ckpt/checkpoint_epoch_20.pth"
 
 # train
 ./scripts/dist_train.sh 4 --cfg_file ${config} --extra_tag ${arg} --fix_random_seed --workers 2 --tcp_port 10000 #--find_unused_parameters
