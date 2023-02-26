@@ -308,6 +308,9 @@ class PillarRes18BackBone8x(nn.Module):
 class PillarResBackBone8x(nn.Module):
     def __init__(self, model_cfg, input_channels, grid_size, **kwargs):
         super().__init__()
+        if model_cfg.ZBAM_CFG.get("with_vfe",False):
+            grid_size[-1] = 40
+            kwargs['voxel_size'][-1] = 0.2
         self.model_cfg = model_cfg
         norm_fn = partial(nn.BatchNorm1d, eps=1e-3, momentum=0.01)
         self.sparse_shape = grid_size[[1, 0]]
