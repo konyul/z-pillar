@@ -57,7 +57,10 @@ class Zconv(nn.Module):
         self.input_channel = config.input_channel
         self.num_bins = config.num_bins
         self.output_channel = config.output_channel
-        self.channel_ratio = config.sampling_cfg.get('channel_ratio',1)
+        if 'sampling_cfg' in config:
+            self.channel_ratio = config.sampling_cfg.get('channel_ratio',1)
+        else:
+            self.channel_ratio = 1
         if self.channel_ratio != 1:
             channel = config.input_channel*(2**(config.encoder_level[-1]-1))
             self.linear = Conv1d(channel,int(channel*self.channel_ratio),bn=False)
