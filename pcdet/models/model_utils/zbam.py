@@ -59,11 +59,14 @@ class Zconv(nn.Module):
         self.output_channel = config.output_channel
         self.channel_ratio = config.sampling_cfg.get('channel_ratio',1)
         if self.channel_ratio != 1:
-            channel = config.input_channel*(2**(config.encoder_level[0]-1))
+            channel = config.input_channel*(2**(config.encoder_level[-1]-1))
             self.linear = Conv1d(channel,int(channel*self.channel_ratio),bn=False)
         for encoder_level in self.encoder_levels:
             out_channel = self.output_channel*(2**(encoder_level-1))
-            in_channel = int(self.input_channel*(2**(encoder_level-1))*self.num_bins*self.channel_ratio)
+            if encoder_level == 1:
+                in_channel = int(self.input_channel*self.num_bins)    
+            else:
+                in_channel = int(self.input_channel*(2**(encoder_level-1))*self.num_bins*self.channel_ratio)
             bin_shuffle_list.append(bin_shuffle(in_channel, out_channel))
             conv_list.append(Conv1d(8, out_channel))
         self.bin_shuffle_list = nn.Sequential(*bin_shuffle_list)
@@ -239,7 +242,7 @@ class Zconv(nn.Module):
         if occupied_mask.sum() == 0:
             return sparse_input
         src = src[occupied_mask]
-        if self.channel_ratio != 1:
+        if self.channel_ratio != 1 and downsample_level != 1:
             src = self.linear(src)
         N,P,C = src.shape
         src = src.view(N,P*C)
