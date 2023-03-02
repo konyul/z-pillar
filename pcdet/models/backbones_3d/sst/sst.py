@@ -128,7 +128,7 @@ class SSTInputLayer(nn.Module):
             inner_win_inds = self.get_inner_win_inds(conti_win_inds)
 
             flat2window_inds = conti_win_inds * max_tokens + inner_win_inds
-
+            import pdb;pdb.set_trace()
             flat2window_inds_dict[dl] = (flat2window_inds, torch.where(dl_mask))
 
             if self.debug:
