@@ -1,5 +1,5 @@
 config="cfgs/nuscenes_models/E4/VFE/cbgs_pillar0075_neckv1_res2d_centerpoint_mlp.yaml"
-arg='E4-VFE,E4'
+arg='E4-VFE,E1,2,3'
 ckpt="../output/nuscenes_models/E4/VFE/cbgs_pillar0075_neckv1_res2d_centerpoint_mlp/${arg}/ckpt/checkpoint_epoch_20.pth"
 
 # train

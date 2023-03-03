@@ -53,27 +53,24 @@ class Zconv(nn.Module):
         super().__init__()
         bin_shuffle_list = []
         conv_list = []
+        linear_list = []
         self.encoder_levels = config.encoder_level
         self.input_channel = config.input_channel
         self.num_bins = config.num_bins
         self.output_channel = config.output_channel
-        if 'sampling_cfg' in config:
-            self.channel_ratio = config.sampling_cfg.get('channel_ratio',1)
-        else:
-            self.channel_ratio = 1
-        if self.channel_ratio != 1:
-            channel = config.input_channel*(2**(config.encoder_level[-1]-1))
-            self.linear = Conv1d(channel,int(channel*self.channel_ratio),bn=False)
         for encoder_level in self.encoder_levels:
             out_channel = self.output_channel*(2**(encoder_level-1))
             if encoder_level == 1:
                 in_channel = int(self.input_channel*self.num_bins)    
             else:
-                in_channel = int(self.input_channel*(2**(encoder_level-1))*self.num_bins*self.channel_ratio)
+                in_channel = int(self.input_channel*(2**(encoder_level-1))*self.num_bins*0.25)
+            if encoder_level != 1:
+                linear_list.append(Conv1d(self.input_channel*(2**(encoder_level-1)), int(self.input_channel*(2**(encoder_level-1))*0.25), bn=False))
             bin_shuffle_list.append(bin_shuffle(in_channel, out_channel))
             conv_list.append(Conv1d(8, out_channel))
         self.bin_shuffle_list = nn.Sequential(*bin_shuffle_list)
         self.conv_list = nn.Sequential(*conv_list)
+        self.linear_list = nn.Sequential(*linear_list)
         self.grid_size = torch.tensor(config.grid_size).cuda()
         self.scale_xy = self.grid_size[0] * self.grid_size[1]
         self.scale_y = self.grid_size[1]
@@ -87,6 +84,7 @@ class Zconv(nn.Module):
         if self.point_sample:
             self.sampling_type = config.sampling_type
             self.num_points = config.sampling_cfg.get('num_points',5000)
+        self.buffer = config.sampling_cfg.get("buffer",False)
     def binning(self, data_dict):
         voxels, voxel_coords = data_dict['voxel_features'], data_dict['voxel_features_coords'].to(torch.long)
         v_feat_coords = voxel_coords[:, 0] * self.scale_xy + voxel_coords[:, 3] * self.scale_y + voxel_coords[:, 2]
@@ -217,8 +215,11 @@ class Zconv(nn.Module):
         return data_dict
         
     def point_sum_sparse(self, data_dict, downsample_level):
-        for level in range(2, downsample_level+1):
-            data_dict = self.point_gen(data_dict, level)
+        if not self.buffer:
+            for level in range(2, downsample_level+1):
+                data_dict = self.point_gen(data_dict, level)
+        else:
+            data_dict = self.point_gen(data_dict, downsample_level)
         expand_mask = data_dict['expand_mask']
         n_points = data_dict['points_with_f_center']
         idx_inv = data_dict['unq_inv']
@@ -245,11 +246,12 @@ class Zconv(nn.Module):
         if occupied_mask.sum() == 0:
             return sparse_input
         src = src[occupied_mask]
-        if self.channel_ratio != 1 and downsample_level != 1:
-            src = self.linear(src)
+        cur_level = self.encoder_levels.index(downsample_level)
+        if downsample_level != 1:
+            src = self.linear_list[cur_level-1](src)
         N,P,C = src.shape
         src = src.view(N,P*C)
-        src = self.bin_shuffle_list[self.encoder_levels.index(downsample_level)](src)
+        src = self.bin_shuffle_list[cur_level](src)
         if unq_idx is not None:
             unq_idx = unq_idx[occupied_mask]
             sparse_input._features[unq_idx] = sparse_input._features[unq_idx] + src
