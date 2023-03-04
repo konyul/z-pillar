@@ -83,7 +83,7 @@ MODEL:
           input_channel: 32,
           feat_channel: 32,
           output_channel: 32,
-          encoder_level: [1,2,3],
+          encoder_level: [1,2,3,4],
           sampling_type: RS,
           sampling_cfg: {
             'buffer': True,
