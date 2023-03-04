@@ -71,7 +71,7 @@ MODEL:
         USE_NORM: True
         NUM_FILTERS: [ 32 ]
         use_shift: True
-        use_downsample: True
+        use_downsample: False
 
     BACKBONE_3D:
         NAME: PillarResBackBone8x

@@ -266,12 +266,6 @@ class DynamicScalePillarVFE(VFETemplate):
         f_center[:, 1] = points_xyz[:, 1] - (points_coords[:, 1].to(points_xyz.dtype) * voxel_y + y_offset)
         f_center[:, 2] = points_xyz[:, 2] - self.z_offset
 
-        features = [f_center]
-        if self.use_absolute_xyz:
-            features.append(points[:, 1:])
-        else:
-            features.append(points[:, 4:])
-
         if self.use_cluster_xyz:
             points_mean = torch_scatter.scatter_mean(points_xyz, unq_inv, dim=0)
             f_cluster = points_xyz - points_mean[unq_inv, :]
