@@ -225,10 +225,16 @@ class DynamicScalePillarVFE(VFETemplate):
                                                 nn.ReLU())
         self.use_shift = self.model_cfg.get("use_shift", False)
         self.use_downsample = self.model_cfg.get("use_downsample", False)
+        self.use_downsamplex2 = self.model_cfg.get("use_downsamplex2", False)
+        self.use_downsample_shift = self.model_cfg.get("use_downsample_shift", False)
         in_channel = 32 * 2
         if self.use_shift:
             in_channel += 64
         if self.use_downsample:
+            in_channel += 64
+        if self.use_downsamplex2:
+            in_channel += 64
+        if self.use_downsample_shift:
             in_channel += 64
         self.AVFEO_point_feature_fc = nn.Sequential(
                                                 nn.Linear(in_channel ,32, bias=False),
@@ -286,7 +292,42 @@ class DynamicScalePillarVFE(VFETemplate):
         x_max = torch_scatter.scatter_max(scatter_feature, unq_inv, dim=0)[0]
         features = torch.cat([scatter_feature, x_max[unq_inv, :]], dim=1)
         return features
+    
+    def downsample_shift(self, points, downsample_level):
+        voxel_size = self.voxel_size[[0, 1]] * downsample_level
+        grid_size = (self.grid_size / downsample_level).long()
+        voxel_x = voxel_size[0]
+        voxel_y = voxel_size[1]
+        x_offset = voxel_x / 2 + self.point_cloud_range[0]
+        y_offset = voxel_y / 2 + self.point_cloud_range[1]
+        shifted_point_cloud_range = self.point_cloud_range[[0,1]] + voxel_size[[0,1]] / 2
+        points_coords = (torch.floor((points[:, [1, 2]] - shifted_point_cloud_range[[0, 1]]) / voxel_size[[0, 1]]) + 1).int()
+        mask = ((points_coords >= 0) & (points_coords < grid_size[[0, 1]] + 1)).all(dim=1)
+        points = points[mask]
+        points_coords = points_coords[mask]
+        points_xyz = points[:, [1, 2, 3]].contiguous()
+        shifted_scale_xy = (grid_size[0] + 1) * (grid_size[1] + 1)
+        shifted_scale_y = (grid_size[1] + 1)
+        merge_coords = points[:, 0].int() * shifted_scale_xy + \
+                       points_coords[:, 0] * shifted_scale_y + \
+                       points_coords[:, 1]
+
+        unq_coords, unq_inv, unq_cnt = torch.unique(merge_coords, return_inverse=True, return_counts=True, dim=0)
+
+        f_center = torch.zeros_like(points_xyz)
         
+        f_center[:, 0] = points_xyz[:, 0] - (points_coords[:, 0].to(points_xyz.dtype) * self.voxel_x + x_offset)
+        f_center[:, 1] = points_xyz[:, 1] - (points_coords[:, 1].to(points_xyz.dtype) * self.voxel_y + y_offset)
+        f_center[:, 2] = points_xyz[:, 2] - self.z_offset
+        
+        if self.use_cluster_xyz:
+            points_mean = torch_scatter.scatter_mean(points_xyz, unq_inv, dim=0)
+            f_cluster = points_xyz - points_mean[unq_inv, :]
+            point_mean = points_mean[unq_inv, :]
+            
+        features = self.gen_feat(points, f_center, point_mean, f_cluster, unq_inv)
+        return features
+    
     def shift(self, points):
         shifted_point_cloud_range = self.point_cloud_range[[0,1]] + self.voxel_size[[0,1]] / 2
         points_coords = (torch.floor((points[:, [1, 2]] - shifted_point_cloud_range[[0, 1]]) / self.voxel_size[[0, 1]]) + 1).int()
@@ -324,6 +365,10 @@ class DynamicScalePillarVFE(VFETemplate):
             shifted_features = self.shift(points)
         if self.use_downsample:
             downsampled_features = self.downsample(points, 2)
+        if self.use_downsamplex2:
+            downsampled_featuresx2 = self.downsample(points, 4)
+        if self.use_downsample_shift:
+            shifted_downsampled_features = self.downsample_shift(points, 2)
         mask = ((points_coords >= 0) & (points_coords < self.grid_size[[0, 1]])).all(dim=1)
         points = points[mask]
         points_coords = points_coords[mask]
@@ -351,6 +396,10 @@ class DynamicScalePillarVFE(VFETemplate):
             final_features.append(shifted_features)
         if self.use_downsample:
             final_features.append(downsampled_features)
+        if self.use_downsample_shift:
+            final_features.append(shifted_downsampled_features)
+        if self.use_downsamplex2:
+            final_features.append(downsampled_featuresx2)
         final_features = torch.cat(final_features, dim=-1).contiguous()
         final_features_fc = self.AVFEO_point_feature_fc(final_features)
         features = torch_scatter.scatter_max(final_features_fc, unq_inv, dim=0)[0]

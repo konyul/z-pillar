@@ -70,8 +70,11 @@ MODEL:
         USE_CLUSTER_XYZ: True
         USE_NORM: True
         NUM_FILTERS: [ 32 ]
-        use_shift: True
-        use_downsample: False
+        use_shift: False
+        use_downsample: True
+        use_downsample_shift: False
+        use_downsamplex2: True
+
 
     BACKBONE_3D:
         NAME: PillarResBackBone8x
@@ -142,7 +145,7 @@ MODEL:
 
 
 OPTIMIZATION:
-    BATCH_SIZE_PER_GPU: 4
+    BATCH_SIZE_PER_GPU: 2
     NUM_EPOCHS: 20
 
     OPTIMIZER: adam_onecycle
