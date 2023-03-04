@@ -70,7 +70,8 @@ MODEL:
         USE_CLUSTER_XYZ: True
         USE_NORM: True
         NUM_FILTERS: [ 32 ]
-        HVSTYLE: True
+        use_shift: True
+        use_downsample: True
 
     BACKBONE_3D:
         NAME: PillarResBackBone8x

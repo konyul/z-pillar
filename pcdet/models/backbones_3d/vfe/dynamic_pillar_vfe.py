@@ -216,30 +216,37 @@ class DynamicScalePillarVFE(VFETemplate):
         self.grid_size = torch.tensor(grid_size[:2]).cuda()
         self.voxel_size = torch.tensor(voxel_size).cuda()
         self.point_cloud_range = torch.tensor(point_cloud_range).cuda()
-        self.hvstyle = self.model_cfg.get("HVSTYLE",False)
-        if self.hvstyle:
-            self.AVFE_point_feature_fc = nn.Sequential(nn.Linear(11, 32, bias=False),
-                                                       nn.BatchNorm1d(32, eps=1e-3, momentum=0.01),
-                                                       nn.ReLU())
-            self.AVFE_Attention_feature_fc = nn.Sequential(
-                                                    nn.Linear(11*2-2,32,bias=False),
+        self.AVFE_point_feature_fc = nn.Sequential(nn.Linear(8, 32, bias=False),
                                                     nn.BatchNorm1d(32, eps=1e-3, momentum=0.01),
                                                     nn.ReLU())
-            self.AVFEO_point_feature_fc = nn.Sequential(
-                                                    nn.Linear(32 * 2 * 2 ,32,bias=False),
-                                                    nn.BatchNorm1d(32, eps=1e-3, momentum=0.01),
-                                                    nn.ReLU())
+        self.AVFE_Attention_feature_fc = nn.Sequential(
+                                                nn.Linear(14, 32,bias=False),
+                                                nn.BatchNorm1d(32, eps=1e-3, momentum=0.01),
+                                                nn.ReLU())
+        self.use_shift = self.model_cfg.get("use_shift", False)
+        self.use_downsample = self.model_cfg.get("use_downsample", False)
+        in_channel = 32 * 2
+        if self.use_shift:
+            in_channel += 64
+        if self.use_downsample:
+            in_channel += 64
+        self.AVFEO_point_feature_fc = nn.Sequential(
+                                                nn.Linear(in_channel ,32, bias=False),
+                                                nn.BatchNorm1d(32, eps=1e-3, momentum=0.01),
+                                                nn.ReLU())
 
     def get_output_feature_dim(self):
         return self.num_filters[-1]
     
-    def downsample(self, points):
-        voxel_size = self.voxel_size[[0, 1]]*2
-        grid_size = (self.grid_size/2).long()
+    def downsample(self, points, downsample_level):
+        voxel_size = self.voxel_size[[0, 1]] * downsample_level
+        grid_size = (self.grid_size / downsample_level).long()
         scale_xy = grid_size[0] * grid_size[1]
         scale_y = grid_size[1]
         voxel_x = voxel_size[0]
         voxel_y = voxel_size[1]
+        x_offset = voxel_x / 2 + self.point_cloud_range[0]
+        y_offset = voxel_y / 2 + self.point_cloud_range[1]
         points_coords = torch.floor(
             (points[:, [1, 2]] - self.point_cloud_range[[0, 1]]) / voxel_size).int()
         mask = ((points_coords >= 0) & (points_coords < grid_size)).all(dim=1)
@@ -254,9 +261,9 @@ class DynamicScalePillarVFE(VFETemplate):
         unq_coords, unq_inv, unq_cnt = torch.unique(merge_coords, return_inverse=True, return_counts=True, dim=0)
 
         f_center = torch.zeros_like(points_xyz)
-        ## need to change
-        f_center[:, 0] = points_xyz[:, 0] - (points_coords[:, 0].to(points_xyz.dtype) * voxel_x + self.x_offset)
-        f_center[:, 1] = points_xyz[:, 1] - (points_coords[:, 1].to(points_xyz.dtype) * voxel_y + self.y_offset)
+
+        f_center[:, 0] = points_xyz[:, 0] - (points_coords[:, 0].to(points_xyz.dtype) * voxel_x + x_offset)
+        f_center[:, 1] = points_xyz[:, 1] - (points_coords[:, 1].to(points_xyz.dtype) * voxel_y + y_offset)
         f_center[:, 2] = points_xyz[:, 2] - self.z_offset
 
         features = [f_center]
@@ -265,27 +272,27 @@ class DynamicScalePillarVFE(VFETemplate):
         else:
             features.append(points[:, 4:])
 
-        # if self.use_cluster_xyz:
-        #     points_mean = torch_scatter.scatter_mean(points_xyz, unq_inv, dim=0)
-        #     f_cluster = points_xyz - points_mean[unq_inv, :]
-        #     features.append(f_cluster)
+        if self.use_cluster_xyz:
+            points_mean = torch_scatter.scatter_mean(points_xyz, unq_inv, dim=0)
+            f_cluster = points_xyz - points_mean[unq_inv, :]
+            point_mean = points_mean[unq_inv, :]
 
-        if self.with_distance:
-            points_dist = torch.norm(points[:, 1:4], 2, dim=1, keepdim=True)
-            features.append(points_dist)
-        features = torch.cat(features, dim=-1)
-
-        for pfn in self.pfn_layers:
-            features = pfn(features, unq_inv)
-        # generate voxel coordinates
-        unq_coords = unq_coords.int()
-        pillar_coords = torch.stack((unq_coords // scale_xy,
-                                     (unq_coords % scale_xy) // scale_y,
-                                     unq_coords % scale_y,
-                                     ), dim=1)
-        pillar_coords = pillar_coords[:, [0, 2, 1]]
-        return features, pillar_coords
+        features = self.gen_feat(points, f_center, point_mean, f_cluster, unq_inv)
+        return features
     
+    def gen_feat(self, points, f_center, point_mean, f_cluster, unq_inv):
+        features = [f_center, points[:,1:]]
+        features = torch.cat(features,dim=-1).contiguous()
+        cluster_center = point_mean-f_center
+        attn_features = [f_cluster, features[:,3:], point_mean, cluster_center]
+        attn_features = torch.cat(attn_features,dim=-1).contiguous()
+        features_fc = self.AVFE_point_feature_fc(features) 
+        attention_feature_fc = self.AVFE_Attention_feature_fc(attn_features)
+        scatter_feature = features_fc * attention_feature_fc
+        x_max = torch_scatter.scatter_max(scatter_feature, unq_inv, dim=0)[0]
+        features = torch.cat([scatter_feature, x_max[unq_inv, :]], dim=1)
+        return features
+        
     def shift(self, points):
         shifted_point_cloud_range = self.point_cloud_range[[0,1]] + self.voxel_size[[0,1]] / 2
         points_coords = (torch.floor((points[:, [1, 2]] - shifted_point_cloud_range[[0, 1]]) / self.voxel_size[[0, 1]]) + 1).int()
@@ -312,24 +319,17 @@ class DynamicScalePillarVFE(VFETemplate):
             f_cluster = points_xyz - points_mean[unq_inv, :]
             point_mean = points_mean[unq_inv, :]
             
-        features = [points[:,1:],f_cluster,f_center]
-        features = torch.cat(features,dim=-1).contiguous()
-        attn_features = [f_cluster,features[:,3:],point_mean,torch.zeros((f_cluster.shape[0],3)).to(f_cluster.device),(point_mean-f_center)]
-        attn_features = torch.cat(attn_features,dim=-1).contiguous()
-        features_fc = self.AVFE_point_feature_fc(features) 
-        attention_feature_fc = self.AVFE_Attention_feature_fc(attn_features)
-        scatter_feature = features_fc * attention_feature_fc
-        x_max = torch_scatter.scatter_max(scatter_feature, unq_inv, dim=0)[0]
-        features = torch.cat([scatter_feature, x_max[unq_inv, :]], dim=1)
+        features = self.gen_feat(points, f_center, point_mean, f_cluster, unq_inv)
         return features
     
     def forward(self, batch_dict, **kwargs):
         points = batch_dict['points']  # (batch_idx, x, y, z, i, e)
         points_coords = torch.floor(
             (points[:, [1, 2]] - self.point_cloud_range[[0, 1]]) / self.voxel_size[[0, 1]]).int()
-        shifted_features = self.shift(points)
-        if False:
-            downsampled_pillar_features, downsampled_pillar_coords = self.downsample(points)
+        if self.use_shift:
+            shifted_features = self.shift(points)
+        if self.use_downsample:
+            downsampled_features = self.downsample(points, 2)
         mask = ((points_coords >= 0) & (points_coords < self.grid_size[[0, 1]])).all(dim=1)
         points = points[mask]
         points_coords = points_coords[mask]
@@ -351,16 +351,13 @@ class DynamicScalePillarVFE(VFETemplate):
             f_cluster = points_xyz - points_mean[unq_inv, :]
             point_mean = points_mean[unq_inv, :]
 
-        features = [points[:,1:],f_cluster,f_center]
-        features = torch.cat(features,dim=-1).contiguous()
-        attn_features = [f_cluster,features[:,3:],point_mean,torch.zeros((f_cluster.shape[0],3)).to(f_cluster.device),(point_mean-f_center)]
-        attn_features = torch.cat(attn_features,dim=-1).contiguous()
-        features_fc = self.AVFE_point_feature_fc(features) 
-        attention_feature_fc = self.AVFE_Attention_feature_fc(attn_features)
-        scatter_feature = features_fc * attention_feature_fc
-        x_max = torch_scatter.scatter_max(scatter_feature, unq_inv, dim=0)[0]
-        features = torch.cat([scatter_feature, x_max[unq_inv, :]], dim=1)
-        final_features = torch.cat([features,shifted_features],dim=-1).contiguous()
+        features = self.gen_feat(points, f_center, point_mean, f_cluster, unq_inv)
+        final_features = [features]
+        if self.use_shift:
+            final_features.append(shifted_features)
+        if self.use_downsample:
+            final_features.append(downsampled_features)
+        final_features = torch.cat(final_features, dim=-1).contiguous()
         final_features_fc = self.AVFEO_point_feature_fc(final_features)
         features = torch_scatter.scatter_max(final_features_fc, unq_inv, dim=0)[0]
         # generate voxel coordinates

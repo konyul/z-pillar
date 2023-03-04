@@ -286,31 +286,25 @@ class DynamicScalePillarVFE(VFETemplate):
         pillar_coords = pillar_coords[:, [0, 2, 1]]
         return features, pillar_coords
     
-    
-    def forward(self, batch_dict, **kwargs):
-        points = batch_dict['points']  # (batch_idx, x, y, z, i, e)
-        points_coords = torch.floor(
-            (points[:, [1, 2]] - self.point_cloud_range[[0, 1]]) / self.voxel_size[[0, 1]]).int()
-        
+    def shift(self, points):
         shifted_point_cloud_range = self.point_cloud_range[[0,1]] + self.voxel_size[[0,1]] / 2
-        _points_coords = (torch.floor((points[:, [1, 2]] - shifted_point_cloud_range[[0, 1]]) / self.voxel_size[[0, 1]]) + 1).int()
-        mask = ((_points_coords >= 0) & (_points_coords < self.grid_size[[0, 1]] + 1)).all(dim=1)
-        #(points!=_points[:-1]).nonzero()
-        _points = points[mask]
-        _points_coords = _points_coords[mask]
-        points_xyz = _points[:, [1, 2, 3]].contiguous()
+        points_coords = (torch.floor((points[:, [1, 2]] - shifted_point_cloud_range[[0, 1]]) / self.voxel_size[[0, 1]]) + 1).int()
+        mask = ((points_coords >= 0) & (points_coords < self.grid_size[[0, 1]] + 1)).all(dim=1)
+        points = points[mask]
+        points_coords = points_coords[mask]
+        points_xyz = points[:, [1, 2, 3]].contiguous()
         shifted_scale_xy = (self.grid_size[0] + 1) * (self.grid_size[1] + 1)
         shifted_scale_y = (self.grid_size[1] + 1)
-        merge_coords = _points[:, 0].int() * shifted_scale_xy + \
-                       _points_coords[:, 0] * shifted_scale_y + \
-                       _points_coords[:, 1]
+        merge_coords = points[:, 0].int() * shifted_scale_xy + \
+                       points_coords[:, 0] * shifted_scale_y + \
+                       points_coords[:, 1]
 
         unq_coords, unq_inv, unq_cnt = torch.unique(merge_coords, return_inverse=True, return_counts=True, dim=0)
 
         f_center = torch.zeros_like(points_xyz)
         
-        f_center[:, 0] = points_xyz[:, 0] - (_points_coords[:, 0].to(points_xyz.dtype) * self.voxel_x + self.x_offset)
-        f_center[:, 1] = points_xyz[:, 1] - (_points_coords[:, 1].to(points_xyz.dtype) * self.voxel_y + self.y_offset)
+        f_center[:, 0] = points_xyz[:, 0] - (points_coords[:, 0].to(points_xyz.dtype) * self.voxel_x + self.x_offset)
+        f_center[:, 1] = points_xyz[:, 1] - (points_coords[:, 1].to(points_xyz.dtype) * self.voxel_y + self.y_offset)
         f_center[:, 2] = points_xyz[:, 2] - self.z_offset
         
         if self.use_cluster_xyz:
@@ -318,7 +312,7 @@ class DynamicScalePillarVFE(VFETemplate):
             f_cluster = points_xyz - points_mean[unq_inv, :]
             point_mean = points_mean[unq_inv, :]
             
-        features = [_points[:,1:],f_cluster,f_center]
+        features = [points[:,1:],f_cluster,f_center]
         features = torch.cat(features,dim=-1).contiguous()
         attn_features = [f_cluster,features[:,3:],point_mean,torch.zeros((f_cluster.shape[0],3)).to(f_cluster.device),(point_mean-f_center)]
         attn_features = torch.cat(attn_features,dim=-1).contiguous()
@@ -326,8 +320,14 @@ class DynamicScalePillarVFE(VFETemplate):
         attention_feature_fc = self.AVFE_Attention_feature_fc(attn_features)
         scatter_feature = features_fc * attention_feature_fc
         x_max = torch_scatter.scatter_max(scatter_feature, unq_inv, dim=0)[0]
-        shifted_features = torch.cat([scatter_feature, x_max[unq_inv, :]], dim=1)
-        
+        features = torch.cat([scatter_feature, x_max[unq_inv, :]], dim=1)
+        return features
+    
+    def forward(self, batch_dict, **kwargs):
+        points = batch_dict['points']  # (batch_idx, x, y, z, i, e)
+        points_coords = torch.floor(
+            (points[:, [1, 2]] - self.point_cloud_range[[0, 1]]) / self.voxel_size[[0, 1]]).int()
+        shifted_features = self.shift(points)
         if False:
             downsampled_pillar_features, downsampled_pillar_coords = self.downsample(points)
         mask = ((points_coords >= 0) & (points_coords < self.grid_size[[0, 1]])).all(dim=1)
@@ -360,10 +360,7 @@ class DynamicScalePillarVFE(VFETemplate):
         scatter_feature = features_fc * attention_feature_fc
         x_max = torch_scatter.scatter_max(scatter_feature, unq_inv, dim=0)[0]
         features = torch.cat([scatter_feature, x_max[unq_inv, :]], dim=1)
-        try:
-            final_features = torch.cat([features,shifted_features],dim=-1).contiguous()
-        except:
-            import pdb;pdb.set_trace()
+        final_features = torch.cat([features,shifted_features],dim=-1).contiguous()
         final_features_fc = self.AVFEO_point_feature_fc(final_features)
         features = torch_scatter.scatter_max(final_features_fc, unq_inv, dim=0)[0]
         # generate voxel coordinates
