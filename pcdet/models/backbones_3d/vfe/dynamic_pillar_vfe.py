@@ -216,11 +216,11 @@ class DynamicScalePillarVFE(VFETemplate):
         self.grid_size = torch.tensor(grid_size[:2]).cuda()
         self.voxel_size = torch.tensor(voxel_size).cuda()
         self.point_cloud_range = torch.tensor(point_cloud_range).cuda()
-        self.AVFE_point_feature_fc = nn.Sequential(nn.Linear(8, 32, bias=False),
+        self.AVFE_point_feature_fc = nn.Sequential(nn.Linear(11, 32, bias=False),
                                                     nn.BatchNorm1d(32, eps=1e-3, momentum=0.01),
                                                     nn.ReLU())
         self.AVFE_Attention_feature_fc = nn.Sequential(
-                                                nn.Linear(14, 32,bias=False),
+                                                nn.Linear(17, 32,bias=False),
                                                 nn.BatchNorm1d(32, eps=1e-3, momentum=0.01),
                                                 nn.ReLU())
         self.use_shift = self.model_cfg.get("use_shift", False)
@@ -281,7 +281,7 @@ class DynamicScalePillarVFE(VFETemplate):
         return features
     
     def gen_feat(self, points, f_center, point_mean, f_cluster, unq_inv):
-        features = [f_center, points[:,1:]]
+        features = [points[:,1:], f_cluster, f_center]
         features = torch.cat(features,dim=-1).contiguous()
         cluster_center = point_mean-f_center
         attn_features = [f_cluster, features[:,3:], point_mean, cluster_center]
