@@ -1,6 +1,6 @@
-config="cfgs/nuscenes_models/E4/cbgs_pillar0075_neckv1_res2d_centerpoint_mlp.yaml"
-arg='E4-015'
-ckpt="../output/nuscenes_models/E4/cbgs_pillar0075_neckv1_res2d_centerpoint_mlp/${arg}/ckpt/checkpoint_epoch_20.pth"
+config="cfgs/nuscenes_models/E4/DSP/cbgs_pillar0075_neckv1_res2d_centerpoint_ds_.yaml"
+arg='E4-DSP_downsample,downsample_shifted'
+ckpt="../output/nuscenes_models/E4/DSP/cbgs_pillar0075_neckv1_res2d_centerpoint_ds_/${arg}/ckpt/checkpoint_epoch_20.pth"
 
 # train
 ./scripts/dist_train.sh 4 --cfg_file ${config} --extra_tag ${arg} --fix_random_seed --workers 2 --tcp_port 10000 #--find_unused_parameters
@@ -10,3 +10,14 @@ python3 test.py --cfg_file ${config} --ckpt ${ckpt} --infer_time --batch_size 16
 
 # test
 #./scripts/dist_test.sh 4 --cfg_file ${config} --ckpt ${ckpt}
+
+
+config="cfgs/nuscenes_models/E4/DSP/cbgs_pillar0075_neckv1_res2d_centerpoint_ds.yaml"
+arg='E4-DSP_downsample,downsamplex2'
+ckpt="../output/nuscenes_models/E4/DSP/cbgs_pillar0075_neckv1_res2d_centerpoint_ds/${arg}/ckpt/checkpoint_epoch_20.pth"
+
+# train
+./scripts/dist_train.sh 4 --cfg_file ${config} --extra_tag ${arg} --fix_random_seed --workers 2 --tcp_port 10000 #--find_unused_parameters
+
+# inference speed
+python3 test.py --cfg_file ${config} --ckpt ${ckpt} --infer_time --batch_size 16 --workers 0 --extra_tag ${arg}

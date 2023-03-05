@@ -64,17 +64,16 @@ MODEL:
     NAME: PillarNet
 
     VFE:
-        NAME: DynamicPillarVFESimple2D
+        NAME: DynamicScalePillarVFE
         WITH_DISTANCE: False
         USE_ABSLOTE_XYZ: True
-        USE_CLUSTER_XYZ: False
+        USE_CLUSTER_XYZ: True
         USE_NORM: True
         NUM_FILTERS: [ 32 ]
-        ZPILLAR: Zconv
-        ZPILLAR_CFG: {
-          input_channel: 5,
-          output_channel: 32
-        }
+        use_shift: False
+        use_downsample: True
+        use_downsample_shift: True
+        use_downsamplex2: False
 
     BACKBONE_3D:
         NAME: PillarResBackBone8x
