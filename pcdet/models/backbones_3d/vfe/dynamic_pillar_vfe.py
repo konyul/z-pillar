@@ -316,8 +316,8 @@ class DynamicScalePillarVFE(VFETemplate):
 
         f_center = torch.zeros_like(points_xyz)
         
-        f_center[:, 0] = points_xyz[:, 0] - (points_coords[:, 0].to(points_xyz.dtype) * self.voxel_x + x_offset)
-        f_center[:, 1] = points_xyz[:, 1] - (points_coords[:, 1].to(points_xyz.dtype) * self.voxel_y + y_offset)
+        f_center[:, 0] = points_xyz[:, 0] - (points_coords[:, 0].to(points_xyz.dtype) * voxel_x + x_offset)
+        f_center[:, 1] = points_xyz[:, 1] - (points_coords[:, 1].to(points_xyz.dtype) * voxel_y + y_offset)
         f_center[:, 2] = points_xyz[:, 2] - self.z_offset
         
         if self.use_cluster_xyz:
