@@ -56,16 +56,14 @@ class Zconv(nn.Module):
         linear_list = []
         self.encoder_levels = config.encoder_level
         self.input_channel = config.input_channel
+        self.feat_channel = config.feat_channel
         self.num_bins = config.num_bins
         self.output_channel = config.output_channel
         for encoder_level in self.encoder_levels:
             out_channel = self.output_channel*(2**(encoder_level-1))
-            if encoder_level == 1:
-                in_channel = int(self.input_channel*self.num_bins)    
-            else:
-                in_channel = int(self.input_channel*(2**(encoder_level-1))*self.num_bins*0.25)
+            in_channel = self.feat_channel*self.num_bins
             if encoder_level != 1:
-                linear_list.append(Conv1d(self.input_channel*(2**(encoder_level-1)), int(self.input_channel*(2**(encoder_level-1))*0.25), bn=False))
+                linear_list.append(Conv1d(self.input_channel*(2**(encoder_level-1)), self.feat_channel, bn=False))
             bin_shuffle_list.append(bin_shuffle(in_channel, out_channel))
             conv_list.append(Conv1d(8, out_channel))
         self.bin_shuffle_list = nn.Sequential(*bin_shuffle_list)
