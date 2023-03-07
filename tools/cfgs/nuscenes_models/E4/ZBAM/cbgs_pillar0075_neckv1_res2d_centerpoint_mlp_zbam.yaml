@@ -81,8 +81,8 @@ MODEL:
           encoder_level: [1, 3],
           sampling_type: RS,
           sampling_cfg: {
-            'num_points': 10000,
-            'channel_ratio': 0.25
+            'buffer': False,
+            'num_points': 10000
           }
         }
 
