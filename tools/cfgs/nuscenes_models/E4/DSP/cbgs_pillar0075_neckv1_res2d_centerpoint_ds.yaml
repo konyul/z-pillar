@@ -70,10 +70,11 @@ MODEL:
         USE_CLUSTER_XYZ: True
         USE_NORM: True
         NUM_FILTERS: [ 32 ]
-        use_shift: False
-        use_downsample: True
+        use_shift: True
+        use_downsample: False
         use_downsample_shift: False
-        use_downsamplex2: True
+        use_downsamplex2: False
+        fusion_method: sum
 
 
     BACKBONE_3D:

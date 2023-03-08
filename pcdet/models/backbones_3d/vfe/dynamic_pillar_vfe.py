@@ -227,6 +227,7 @@ class DynamicScalePillarVFE(VFETemplate):
         self.use_downsample = self.model_cfg.get("use_downsample", False)
         self.use_downsamplex2 = self.model_cfg.get("use_downsamplex2", False)
         self.use_downsample_shift = self.model_cfg.get("use_downsample_shift", False)
+        self.fusion_method = self.model_cfg.get('fusion_method', False)
         in_channel = 32 * 2
         if self.use_shift:
             in_channel += 64
@@ -236,6 +237,8 @@ class DynamicScalePillarVFE(VFETemplate):
             in_channel += 64
         if self.use_downsample_shift:
             in_channel += 64
+        if self.fusion_method == 'sum':
+            in_channel = in_channel // 2
         self.AVFEO_point_feature_fc = nn.Sequential(
                                                 nn.Linear(in_channel ,32, bias=False),
                                                 nn.BatchNorm1d(32, eps=1e-3, momentum=0.01),
@@ -400,7 +403,11 @@ class DynamicScalePillarVFE(VFETemplate):
             final_features.append(shifted_downsampled_features)
         if self.use_downsamplex2:
             final_features.append(downsampled_featuresx2)
-        final_features = torch.cat(final_features, dim=-1).contiguous()
+        if self.fusion_method == 'sum':
+            stacked_final_features = torch.stack(final_features)
+            final_features = torch.sum(stacked_final_features, dim=0).contiguous()
+        if self.fusion_method == 'concat':
+            final_features = torch.cat(final_features, dim=-1).contiguous()
         final_features_fc = self.AVFEO_point_feature_fc(final_features)
         features = torch_scatter.scatter_max(final_features_fc, unq_inv, dim=0)[0]
         # generate voxel coordinates
