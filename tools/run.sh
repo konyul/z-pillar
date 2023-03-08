@@ -1,5 +1,5 @@
 config="cfgs/nuscenes_models/E4/DSP/cbgs_pillar0075_neckv1_res2d_centerpoint_ds.yaml"
-arg='E4-DSP_Shifted_attention'
+arg='E4-DSP_gate'
 ckpt="../output/nuscenes_models/E4/DSP/cbgs_pillar0075_neckv1_res2d_centerpoint_ds/${arg}/ckpt/checkpoint_epoch_20.pth"
 
 # train
