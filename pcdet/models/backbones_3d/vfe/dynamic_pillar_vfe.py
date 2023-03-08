@@ -243,7 +243,20 @@ class DynamicScalePillarVFE(VFETemplate):
                                                 nn.Linear(in_channel ,32, bias=False),
                                                 nn.BatchNorm1d(32, eps=1e-3, momentum=0.01),
                                                 nn.ReLU())
-
+        if self.fusion_method == 'attention':
+            self.attention = nn.MultiheadAttention(64, 1)
+            self.fully_connected_layer_q = nn.Sequential(
+                                                nn.Linear(64 ,64, bias=False),
+                                                nn.BatchNorm1d(64, eps=1e-3, momentum=0.01),
+                                                nn.ReLU())
+            self.fully_connected_layer_k = nn.Sequential(
+                                                nn.Linear(64 ,64, bias=False),
+                                                nn.BatchNorm1d(64, eps=1e-3, momentum=0.01),
+                                                nn.ReLU())
+            self.fully_connected_layer_v = nn.Sequential(
+                                                nn.Linear(64 ,64, bias=False),
+                                                nn.BatchNorm1d(64, eps=1e-3, momentum=0.01),
+                                                nn.ReLU())
     def get_output_feature_dim(self):
         return self.num_filters[-1]
     
@@ -406,7 +419,17 @@ class DynamicScalePillarVFE(VFETemplate):
         if self.fusion_method == 'sum':
             stacked_final_features = torch.stack(final_features)
             final_features = torch.sum(stacked_final_features, dim=0).contiguous()
-        if self.fusion_method == 'concat':
+        elif self.fusion_method == 'concat':
+            final_features = torch.cat(final_features, dim=-1).contiguous()
+        elif self.fusion_method == 'attention':
+            assert len(final_features) == 2
+            q = final_features[0][None,:,:]
+            k = v = final_features[1][None,:,:]
+            q = self.fully_connected_layer_q(q)
+            k = self.fully_connected_layer_k(k)
+            v = self.fully_connected_layer_v(v)
+            output, _ = self.attention(q,k,v)
+            final_features = [features, output]
             final_features = torch.cat(final_features, dim=-1).contiguous()
         final_features_fc = self.AVFEO_point_feature_fc(final_features)
         features = torch_scatter.scatter_max(final_features_fc, unq_inv, dim=0)[0]
