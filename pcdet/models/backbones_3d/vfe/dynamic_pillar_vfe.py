@@ -257,6 +257,10 @@ class DynamicScalePillarVFE(VFETemplate):
                                                 nn.Linear(64 ,64, bias=False),
                                                 nn.BatchNorm1d(64, eps=1e-3, momentum=0.01),
                                                 nn.ReLU())
+        if self.fusion_method == 'gate':
+            self.fully_connected_layer = nn.Sequential(
+                                                nn.Linear(128 ,1, bias=True),
+                                                nn.Sigmoid())
     def get_output_feature_dim(self):
         return self.num_filters[-1]
     
@@ -431,6 +435,10 @@ class DynamicScalePillarVFE(VFETemplate):
             output, _ = self.attention(q,k,v)
             final_features = [features, output]
             final_features = torch.cat(final_features, dim=-1).contiguous()
+        elif self.fusion_method == 'gate':
+            final_features = torch.cat(final_features, dim=-1).contiguous()
+            attention_gate = self.fully_connected_layer(final_features)
+            final_features = final_features * attention_gate
         final_features_fc = self.AVFEO_point_feature_fc(final_features)
         features = torch_scatter.scatter_max(final_features_fc, unq_inv, dim=0)[0]
         # generate voxel coordinates
