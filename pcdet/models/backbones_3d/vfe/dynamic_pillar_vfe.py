@@ -423,11 +423,14 @@ class DynamicScalePillarVFE(VFETemplate):
             final_features = torch.cat(final_features, dim=-1).contiguous()
         elif self.fusion_method == 'attention':
             assert len(final_features) == 2
+            q = final_features[0]
+            k = v = final_features[1]
             q = self.fully_connected_layer_q(q)
+            q = q[None,:,:]
             k = self.fully_connected_layer_k(k)
+            k = k[None,:,:]
             v = self.fully_connected_layer_v(v)
-            q = final_features[0][None,:,:]
-            k = v = final_features[1][None,:,:]
+            v = v[None,:,:]
             output, _ = self.attention(q,k,v)
             final_features = [features, output]
             final_features = torch.cat(final_features, dim=-1).contiguous()
