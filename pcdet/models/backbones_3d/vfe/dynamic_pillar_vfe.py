@@ -430,7 +430,8 @@ class DynamicScalePillarVFE(VFETemplate):
         elif self.fusion_method == 'attention':
             assert len(final_features) == 2
             q = final_features[0]
-            k = v = final_features[1]
+            k = final_features[1].clone()
+            v = final_features[1].clone()
             q = self.fully_connected_layer_q(q)
             q = q[None,:,:]
             k = self.fully_connected_layer_k(k)
