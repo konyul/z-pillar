@@ -78,12 +78,7 @@ MODEL:
           input_channel: 32,
           feat_channel: 32,
           output_channel: 32,
-          encoder_level: [1, 3],
-          sampling_type: RS,
-          sampling_cfg: {
-            'buffer': False,
-            'num_points': 10000
-          }
+          encoder_level: [1]
         }
 
     BACKBONE_2D:

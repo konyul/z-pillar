@@ -360,6 +360,14 @@ class PillarResBackBone8x(nn.Module):
             'x_conv4': 256
         }
 
+    def matching_idx(self, x_conv, data_dict, downsample_level):
+        pair_bwd = x_conv.__dict__['indice_dict']['spconv'+str(downsample_level)].__dict__['pair_bwd']
+        unq_inv = data_dict['unq_inv'].long()
+        expand_mask = pair_bwd[:,unq_inv].permute(1,0).max(axis=-1)[0].long()
+        data_dict['expand_mask'] = expand_mask
+        data_dict['unq_inv'] = expand_mask
+        return data_dict
+    
     def forward(self, batch_dict):
         pillar_features, pillar_coords = batch_dict['pillar_features'], batch_dict['pillar_coords']
         batch_size = batch_dict['batch_size']
@@ -373,12 +381,15 @@ class PillarResBackBone8x(nn.Module):
         if self.zbam and 1 in self.zbam.encoder_level:
             x_conv1 = self.zbam_model(x_conv1, batch_dict, 1, self.zbam)
         x_conv2 = self.conv2(x_conv1)
+        batch_dict = self.matching_idx(x_conv2, batch_dict, 2)
         if self.zbam and 2 in self.zbam.encoder_level:
             x_conv2 = self.zbam_model(x_conv2, batch_dict, 2, self.zbam)
         x_conv3 = self.conv3(x_conv2)
+        batch_dict = self.matching_idx(x_conv3, batch_dict, 3)
         if self.zbam and 3 in self.zbam.encoder_level:
             x_conv3 = self.zbam_model(x_conv3, batch_dict, 3, self.zbam)
         x_conv4 = self.conv4(x_conv3)
+        batch_dict = self.matching_idx(x_conv4, batch_dict, 4)
         if self.zbam and 4 in self.zbam.encoder_level:
             x_conv4 = self.zbam_model(x_conv4, batch_dict, 4, self.zbam)
         x_conv4 = x_conv4.dense()

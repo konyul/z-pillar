@@ -219,10 +219,6 @@ class DynamicScalePillarVFE(VFETemplate):
         self.AVFE_point_feature_fc = nn.Sequential(nn.Linear(11, 32, bias=False),
                                                     nn.BatchNorm1d(32, eps=1e-3, momentum=0.01),
                                                     nn.ReLU())
-        self.AVFE_Attention_feature_fc = nn.Sequential(
-                                                nn.Linear(17, 32,bias=False),
-                                                nn.BatchNorm1d(32, eps=1e-3, momentum=0.01),
-                                                nn.ReLU())
         self.use_shift = self.model_cfg.get("use_shift", False)
         self.use_downsample = self.model_cfg.get("use_downsample", False)
         self.use_downsamplex2 = self.model_cfg.get("use_downsamplex2", False)
@@ -305,14 +301,9 @@ class DynamicScalePillarVFE(VFETemplate):
     def gen_feat(self, points, f_center, point_mean, f_cluster, unq_inv):
         features = [points[:,1:], f_cluster, f_center]
         features = torch.cat(features,dim=-1).contiguous()
-        cluster_center = point_mean-f_center
-        attn_features = [f_cluster, features[:,3:], point_mean, cluster_center]
-        attn_features = torch.cat(attn_features,dim=-1).contiguous()
-        features_fc = self.AVFE_point_feature_fc(features) 
-        attention_feature_fc = self.AVFE_Attention_feature_fc(attn_features)
-        scatter_feature = features_fc * attention_feature_fc
-        x_max = torch_scatter.scatter_max(scatter_feature, unq_inv, dim=0)[0]
-        features = torch.cat([scatter_feature, x_max[unq_inv, :]], dim=1)
+        scatter_feature = self.AVFE_point_feature_fc(features) 
+        x_mean = torch_scatter.scatter_mean(scatter_feature, unq_inv, dim=0)
+        features = torch.cat([scatter_feature, x_mean[unq_inv, :]], dim=1)
         return features
     
     def downsample_shift(self, points, downsample_level):
