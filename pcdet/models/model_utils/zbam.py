@@ -9,8 +9,7 @@ import numpy as np
 import torch.nn.functional as F
 from torch import nn
 import torch_scatter
-from pcdet.ops.pointnet2.pointnet2_batch import pointnet2_utils
-
+from torch_scatter import scatter_add
 class Conv1d(nn.Module):
     def __init__(self,
                  in_channels,
@@ -135,19 +134,40 @@ class Zconv(nn.Module):
         data_dict['points_sorted'] = torch.cat([points_sorted[:,:1],points_sorted[:,4:]],dim=1)
         return data_dict
     
+    def to_dense_batch(self, x, pillar_idx, max_num_nodes, max_pillar_idx):
+        r"""
+        Point sampling according to pillar index with constraint amount
+        """
+        
+        # num_points in pillars (0 for empty pillar)
+        num_nodes = scatter_add(pillar_idx.new_ones(x.size(0)), pillar_idx, dim=0,
+                                dim_size=max_pillar_idx)
+        cum_nodes = torch.cat([pillar_idx.new_zeros(1), num_nodes.cumsum(dim=0)])
+
+        # check if num_points in pillars exceed the predefined num_points value
+        filter_nodes = False
+        if num_nodes.max() > max_num_nodes:
+            filter_nodes = True
+        tmp = torch.arange(pillar_idx.size(0), device=x.device) - cum_nodes[pillar_idx]
+        if filter_nodes:
+            mask = tmp < max_num_nodes
+            x = x[mask]
+            pillar_idx = pillar_idx[mask]
+        return x, pillar_idx
+
     def point_sum_sparse(self, data_dict, downsample_level):    
         points = data_dict['points_with_f_center']
-        unq_inv = data_dict['unq_inv']
-        unq_inv = unq_inv.long().cuda()
-        expand_mask = data_dict['expand_mask']
+        unq_inv = data_dict['unq_inv'].long().cuda()
         sparse_feat = data_dict['sparse_input']._features
         sparse_indices = data_dict['sparse_input'].indices
-        idx_inv = torch.arange(0, sparse_indices.shape[0]).int()
-        idx_inv = idx_inv[expand_mask]
-        data_dict['unq_inv'] = idx_inv
+        max_pillar_idx = sparse_indices.shape[0]
+        points, unq_inv = self.to_dense_batch(points, unq_inv, max_num_nodes=20, max_pillar_idx=max_pillar_idx)
+        expand_mask = unq_inv.clone()
+        idx_inv = unq_inv.clone()
         n_sparse_feat = sparse_feat[expand_mask]
         points_indices = sparse_indices[expand_mask]
         output = n_sparse_feat + self.conv_list[self.encoder_levels.index(downsample_level)](points[:,1:])
+        data_dict['unq_inv'] = idx_inv
         data_dict['points_feature'] = output
         data_dict['points_sorted'] = torch.cat([points[:,:1],points[:,4:]],dim=1)
         data_dict['points_indices'] = points_indices

@@ -10,6 +10,7 @@ except Exception as e:
     # Incase someone doesn't want to use dynamic pillar vfe and hasn't installed torch_scatter
     pass
 from pcdet.models.model_utils.zbam import build_zbam
+import time
 def post_act_block(in_channels, out_channels, kernel_size, indice_key=None, stride=1, padding=0,
                    conv_type='subm', norm_fn=None):
 
@@ -364,7 +365,6 @@ class PillarResBackBone8x(nn.Module):
         pair_bwd = x_conv.__dict__['indice_dict']['spconv'+str(downsample_level)].__dict__['pair_bwd']
         unq_inv = data_dict['unq_inv'].long()
         expand_mask = pair_bwd[:,unq_inv].permute(1,0).max(axis=-1)[0].long()
-        data_dict['expand_mask'] = expand_mask
         data_dict['unq_inv'] = expand_mask
         return data_dict
     

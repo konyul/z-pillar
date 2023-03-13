@@ -76,9 +76,9 @@ MODEL:
         ZBAM_CFG: {
           zbam: Zconv,
           input_channel: 32,
-          feat_channel: 16,
+          feat_channel: 32,
           output_channel: 32,
-          encoder_level: [4]
+          encoder_level: [3]
         }
 
     BACKBONE_2D:
