@@ -74,7 +74,7 @@ MODEL:
         use_downsample: False
         use_downsample_shift: False
         use_downsamplex2: False
-        fusion_method: concat
+        fusion_method: sum
 
 
     BACKBONE_3D:

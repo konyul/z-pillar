@@ -216,8 +216,8 @@ class DynamicScalePillarVFE(VFETemplate):
         self.grid_size = torch.tensor(grid_size[:2]).cuda()
         self.voxel_size = torch.tensor(voxel_size).cuda()
         self.point_cloud_range = torch.tensor(point_cloud_range).cuda()
-        self.AVFE_point_feature_fc = nn.Sequential(nn.Linear(11, 32, bias=False),
-                                                    nn.BatchNorm1d(32, eps=1e-3, momentum=0.01),
+        self.AVFE_point_feature_fc = nn.Sequential(nn.Linear(11, 16, bias=False),
+                                                    nn.BatchNorm1d(16, eps=1e-3, momentum=0.01),
                                                     nn.ReLU())
         self.use_shift = self.model_cfg.get("use_shift", False)
         self.use_downsample = self.model_cfg.get("use_downsample", False)
@@ -233,12 +233,11 @@ class DynamicScalePillarVFE(VFETemplate):
             in_channel += 64
         if self.use_downsample_shift:
             in_channel += 64
-        if self.fusion_method == 'sum':
-            in_channel = in_channel // 2
-        self.AVFEO_point_feature_fc = nn.Sequential(
-                                                nn.Linear(in_channel ,32, bias=False),
-                                                nn.BatchNorm1d(32, eps=1e-3, momentum=0.01),
-                                                nn.ReLU())
+        if self.fusion_method != 'sum':
+            self.AVFEO_point_feature_fc = nn.Sequential(
+                                                    nn.Linear(in_channel ,32, bias=False),
+                                                    nn.BatchNorm1d(32, eps=1e-3, momentum=0.01),
+                                                    nn.ReLU())
         if self.fusion_method == 'attention':
             self.attention = nn.MultiheadAttention(64, 1)
             self.fully_connected_layer_q = nn.Sequential(
@@ -392,7 +391,7 @@ class DynamicScalePillarVFE(VFETemplate):
                        points_coords[:, 1]
 
         unq_coords, unq_inv, unq_cnt = torch.unique(merge_coords, return_inverse=True, return_counts=True, dim=0)
-
+        batch_dict['unq_inv'] = unq_inv
         f_center = torch.zeros_like(points_xyz)
         f_center[:, 0] = points_xyz[:, 0] - (points_coords[:, 0].to(points_xyz.dtype) * self.voxel_x + self.x_offset)
         f_center[:, 1] = points_xyz[:, 1] - (points_coords[:, 1].to(points_xyz.dtype) * self.voxel_y + self.y_offset)
@@ -416,6 +415,7 @@ class DynamicScalePillarVFE(VFETemplate):
         if self.fusion_method == 'sum':
             stacked_final_features = torch.stack(final_features)
             final_features = torch.sum(stacked_final_features, dim=0).contiguous()
+            features = torch_scatter.scatter_max(final_features, unq_inv, dim=0)[0]
         elif self.fusion_method == 'concat':
             final_features = torch.cat(final_features, dim=-1).contiguous()
         elif self.fusion_method == 'attention':
@@ -437,8 +437,9 @@ class DynamicScalePillarVFE(VFETemplate):
             final_features = torch.cat(final_features, dim=-1).contiguous()
             attention_gate = self.fully_connected_layer(final_features)
             final_features = final_features * F.sigmoid(attention_gate)
-        final_features_fc = self.AVFEO_point_feature_fc(final_features)
-        features = torch_scatter.scatter_max(final_features_fc, unq_inv, dim=0)[0]
+        if self.fusion_method != 'sum':
+            final_features_fc = self.AVFEO_point_feature_fc(final_features)
+            features = torch_scatter.scatter_max(final_features_fc, unq_inv, dim=0)[0]
         # generate voxel coordinates
         unq_coords = unq_coords.int()
         pillar_coords = torch.stack((unq_coords // self.scale_xy,

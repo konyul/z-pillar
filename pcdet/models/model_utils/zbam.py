@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from torch import nn
 import torch_scatter
 from pcdet.ops.pointnet2.pointnet2_batch import pointnet2_utils
-
+import time
 class Conv1d(nn.Module):
     def __init__(self,
                  in_channels,
@@ -78,6 +78,7 @@ class Zconv(nn.Module):
         self.scale_yz = self.grid_size[1] * self.grid_size[2]
         self.scale_z = self.grid_size[2]
         self.nsamples = 1
+        self.conv_e3 = Conv1d(8, 128)
         
     def binning(self, data_dict):
         voxels, voxel_coords = data_dict['voxel_features'], data_dict['voxel_features_coords'].to(torch.long)
@@ -130,7 +131,9 @@ class Zconv(nn.Module):
         points_sorted = points[idx]
         _, inv = torch.unique(pillar_merge_coords_sorted, return_inverse=True)
         sparse_feat = sparse_feat[inv]
+        aa = time.time()
         output = sparse_feat + self.conv_list[0](points_sorted[:,1:])
+        print('linear_subm',time.time()-aa)
         data_dict['points_feature'] = output
         data_dict['points_sorted'] = torch.cat([points_sorted[:,:1],points_sorted[:,4:]],dim=1)
         return data_dict
@@ -142,12 +145,16 @@ class Zconv(nn.Module):
         expand_mask = data_dict['expand_mask']
         sparse_feat = data_dict['sparse_input']._features
         sparse_indices = data_dict['sparse_input'].indices
+        aa = time.time()
         idx_inv = torch.arange(0, sparse_indices.shape[0]).int()
         idx_inv = idx_inv[expand_mask]
+        print('broadcast',time.time()-aa)
         data_dict['unq_inv'] = idx_inv
         n_sparse_feat = sparse_feat[expand_mask]
         points_indices = sparse_indices[expand_mask]
+        aa = time.time()
         output = n_sparse_feat + self.conv_list[self.encoder_levels.index(downsample_level)](points[:,1:])
+        print('linear_sparse',time.time()-aa)
         data_dict['points_feature'] = output
         data_dict['points_sorted'] = torch.cat([points[:,:1],points[:,4:]],dim=1)
         data_dict['points_indices'] = points_indices
@@ -155,17 +162,27 @@ class Zconv(nn.Module):
         return data_dict
 
     def forward(self, sparse_input, data_dict, downsample_level=False, zbam_config=None):
+        aa = time.time()
         data_dict['sparse_input'] = sparse_input
         if downsample_level > 1:
+            ss = time.time()
             data_dict = self.point_sum_sparse(data_dict, downsample_level)
+            print("sparse",time.time()-ss)
         else:
+            ss = time.time()
             data_dict = self.point_sum_subm(data_dict)
+            print("subm",time.time()-ss)
+        ss = time.time()
         data_dict = self.dyn_voxelization(data_dict)
+        print("dynv",time.time()-ss)
+        ss = time.time()
         src, occupied_mask, unq_idx = self.binning(data_dict)
+        print("binning",time.time()-ss)
         if occupied_mask.sum() == 0:
             return sparse_input
         src = src[occupied_mask]
         cur_level = self.encoder_levels.index(downsample_level)
+        ss = time.time()
         if downsample_level != 1:
             src = self.linear_list[cur_level-1](src)
         N,P,C = src.shape
@@ -176,6 +193,8 @@ class Zconv(nn.Module):
             sparse_input._features[unq_idx] = sparse_input._features[unq_idx] + src
         else:
             sparse_input._features[occupied_mask] = sparse_input._features[occupied_mask] + src
+        print("linear",time.time()-ss)
+        print("zbam",time.time()-aa)
         return sparse_input
 
 def build_zbam(model_cfg):
