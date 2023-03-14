@@ -1,6 +1,6 @@
-config="cfgs/nuscenes_models/E4/DSP/cbgs_pillar0075_neckv1_res2d_centerpoint_ds.yaml"
-arg='E4-DSP_sum_scatter_mean_no_attention_mlp_16'
-ckpt="../output/nuscenes_models/E4/DSP/cbgs_pillar0075_neckv1_res2d_centerpoint_ds/${arg}/ckpt/checkpoint_epoch_20.pth"
+config="cfgs/nuscenes_models/E4/ZBAM/cbgs_pillar0075_neckv1_res2d_centerpoint_mlp_zbam.yaml"
+arg='E4-E3-Zconv-num_nodes_10'
+ckpt="../output/nuscenes_models/E4/ZBAM/cbgs_pillar0075_neckv1_res2d_centerpoint_mlp_zbam/${arg}/ckpt/checkpoint_epoch_20.pth"
 
 # train
 ./scripts/dist_train.sh 4 --cfg_file ${config} --extra_tag ${arg} --fix_random_seed --workers 2 --tcp_port 10000 #--find_unused_parameters

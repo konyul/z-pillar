@@ -78,7 +78,8 @@ MODEL:
           input_channel: 32,
           feat_channel: 32,
           output_channel: 32,
-          encoder_level: [3]
+          encoder_level: [3],
+          max_points: 10
         }
 
     BACKBONE_2D:

@@ -58,6 +58,7 @@ class Zconv(nn.Module):
         self.feat_channel = config.feat_channel
         self.num_bins = config.num_bins
         self.output_channel = config.output_channel
+        self.max_points = config.max_points
         for encoder_level in self.encoder_levels:
             out_channel = self.output_channel*(2**(encoder_level-1))
             in_channel = self.feat_channel*self.num_bins
@@ -134,7 +135,7 @@ class Zconv(nn.Module):
         data_dict['points_sorted'] = torch.cat([points_sorted[:,:1],points_sorted[:,4:]],dim=1)
         return data_dict
     
-    def to_dense_batch(self, x, pillar_idx, max_num_nodes, max_pillar_idx):
+    def to_dense_batch(self, x, pillar_idx, max_points, max_pillar_idx):
         r"""
         Point sampling according to pillar index with constraint amount
         """
@@ -146,11 +147,11 @@ class Zconv(nn.Module):
 
         # check if num_points in pillars exceed the predefined num_points value
         filter_nodes = False
-        if num_nodes.max() > max_num_nodes:
+        if num_nodes.max() > max_points:
             filter_nodes = True
         tmp = torch.arange(pillar_idx.size(0), device=x.device) - cum_nodes[pillar_idx]
         if filter_nodes:
-            mask = tmp < max_num_nodes
+            mask = tmp < max_points
             x = x[mask]
             pillar_idx = pillar_idx[mask]
         return x, pillar_idx
@@ -161,7 +162,7 @@ class Zconv(nn.Module):
         sparse_feat = data_dict['sparse_input']._features
         sparse_indices = data_dict['sparse_input'].indices
         max_pillar_idx = sparse_indices.shape[0]
-        points, unq_inv = self.to_dense_batch(points, unq_inv, max_num_nodes=20, max_pillar_idx=max_pillar_idx)
+        points, unq_inv = self.to_dense_batch(points, unq_inv, max_points=self.max_points, max_pillar_idx=max_pillar_idx)
         expand_mask = unq_inv.clone()
         idx_inv = unq_inv.clone()
         n_sparse_feat = sparse_feat[expand_mask]
